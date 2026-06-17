@@ -1,0 +1,5 @@
+pyscf>=2.4.0
+rdkit>=2023.3.0
+rich>=13.0.0
+click>=8.0.0
+pyyaml>=6.0
