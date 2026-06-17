@@ -11,11 +11,11 @@
 import asyncio
 from dataclasses import dataclass, field
 from typing import Optional, Callable
-from .async_executor import AsyncPySCFExecutor, AsyncTask, TaskStatus
-from .parser import PySCFOutputParser
-from .diagnostics import DiagnosticsEngine, Diagnostic
+from .executor import AsyncPySCFExecutor, AsyncTask, TaskStatus
+from .core.parser import PySCFOutputParser
+from .core.diagnostics import DiagnosticsEngine, Diagnostic
 from .templates.pyscf_templates import PySCFTemplateEngine
-from .molecules import get_molecule
+from .molecules.database import get_molecule
 
 
 @dataclass

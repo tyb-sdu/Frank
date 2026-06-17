@@ -1,5 +1,5 @@
 from typing import Optional
-from .molecules import Molecule
+from .database import Molecule
 
 
 def smiles_to_molecule(

@@ -1,7 +1,7 @@
 from typing import Optional
 from .base import TemplateEngine, CodeBlock, GeneratedCode
-from ..molecules import get_molecule, get_pyscf_geometry, Molecule
-from ..basis_sets import recommend_basis_set
+from ..molecules.database import get_molecule, get_pyscf_geometry, Molecule
+from ..basis import recommend_basis_set
 from ..methods.dft import get_dft_functional, get_xc_string
 from ..methods.post_hf import get_post_hf_method
 from ..methods.excited import get_excited_method
@@ -22,6 +22,7 @@ class PySCFTemplateEngine(TemplateEngine):
             section="imports",
             code="\n".join(imports),
             order=0,
+            description="Import required PySCF modules for the calculation",
         )
 
     def _molecule_block(self, mol: Molecule, unit: str = "Angstrom") -> CodeBlock:
@@ -60,7 +61,7 @@ print(f"SCF 能量: {{mf.e_tot:.10f}} Hartree")"""
             section="calculation",
             code=code,
             order=10,
-            description=f"{method} 计算",
+            description=f"Run {method} self-consistent field calculation to determine electronic ground state",
         )
 
     def _dft_block(self, functional: str, mol: Optional[Molecule] = None) -> CodeBlock:
@@ -77,7 +78,7 @@ print(f"DFT ({functional}) 能量: {{mf.e_tot:.10f}} Hartree")"""
             section="calculation",
             code=code,
             order=10,
-            description=f"DFT ({functional}) 计算",
+            description=f"Run density functional theory calculation using {functional} exchange-correlation functional",
         )
 
     def _mp2_block(self, mf_var: str = "mf") -> CodeBlock:
@@ -90,7 +91,7 @@ print(f"MP2 总能量: {{pt.e_tot:.10f}} Hartree")"""
             section="calculation",
             code=code,
             order=10,
-            description="MP2 计算",
+            description="Compute MP2 correlation energy correction to the Hartree-Fock reference",
         )
 
     def _ccsd_block(self, mf_var: str = "mf") -> CodeBlock:
@@ -187,7 +188,7 @@ print(mol_eq.atom_coords() * 0.529177)  # 转换为 Angstrom"""
             section="properties",
             code=code,
             order=20,
-            description="几何优化",
+            description="Optimize molecular geometry to a stationary point on the potential energy surface",
         )
 
     def _frequency_block(self, mf_var: str = "mf") -> CodeBlock:
@@ -205,7 +206,7 @@ print(f"零点能: {{freq_analysis['ZPE'][0]:.6f}} Hartree")"""
             section="properties",
             code=code,
             order=21,
-            description="频率计算",
+            description="Compute harmonic vibrational frequencies and thermochemical corrections",
         )
 
     def _population_analysis_block(self, mf_var: str = "mf") -> CodeBlock:
@@ -222,7 +223,7 @@ print(f"NAO 布居分析完成")"""
             section="analysis",
             code=code,
             order=30,
-            description="布居分析",
+            description="Perform Mulliken and natural atomic orbital population analysis",
         )
 
     def _mo_analysis_block(self, mf_var: str = "mf") -> CodeBlock:
@@ -262,7 +263,7 @@ else:
             section="analysis",
             code=code,
             order=31,
-            description="分子轨道分析",
+            description="Analyze molecular orbital energies, HOMO/LUMO levels, and frontier orbital gap",
         )
 
     def _dipole_block(self, mf_var: str = "mf") -> CodeBlock:
@@ -274,7 +275,7 @@ print(f"偶极矩 (Debye): {{dip}}")"""
             section="properties",
             code=code,
             order=22,
-            description="偶极矩计算",
+            description="Compute electric dipole moment to assess molecular polarity",
         )
 
     def _solvation_block(self, model: str, solvent: str) -> CodeBlock:
@@ -292,7 +293,7 @@ print(f"溶剂化能量: {{mf_sol.e_tot:.10f}} Hartree")"""
             section="method_setup",
             code=code,
             order=5,
-            description=f"{model} 溶剂化 ({solvent_info.name_cn})",
+            description=f"Apply {model} implicit solvation model with {solvent_info.name_cn} solvent (epsilon = {eps})",
         )
 
     def _output_setup(self, output_file: Optional[str]) -> tuple[CodeBlock, str]:
@@ -305,6 +306,7 @@ print(f"溶剂化能量: {{mf_sol.e_tot:.10f}} Hartree")"""
             section="imports",
             code=code,
             order=-1,
+            description="Configure output file path for saving results",
         ), output_file
 
     def _basis_setup(self, basis: str) -> CodeBlock:
@@ -313,6 +315,7 @@ print(f"溶剂化能量: {{mf_sol.e_tot:.10f}} Hartree")"""
             section="imports",
             code=code,
             order=-1,
+            description="Set basis set for the calculation",
         )
 
     def generate_scf(

@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
-from typing import Optional
-from .executor import PySCFExecutor, ExecutionResult
-from .parser import PySCFOutputParser
-from .diagnostics import DiagnosticsEngine, Diagnostic
+from typing import Callable, Optional
+from .core.executor import PySCFExecutor, ExecutionResult
+from .core.parser import PySCFOutputParser
+from .core.diagnostics import DiagnosticsEngine, Diagnostic
 from .templates.pyscf_templates import PySCFTemplateEngine
-from .molecules import get_molecule
+from .molecules.database import get_molecule
 
 
 @dataclass
@@ -52,15 +52,20 @@ class WorkflowEngine:
         method: str = "B3LYP",
         basis: str = "6-31g*",
         solvent: Optional[str] = None,
+        progress_callback: Optional[Callable] = None,
     ) -> WorkflowResult:
         result = WorkflowResult()
         mol = get_molecule(molecule)
+        total_steps = 3 if basis.lower() in ["6-31g*", "6-31g(d)", "6-31g**", "6-31g(d,p)"] else 2
 
         step1 = WorkflowStep(
             name="geometry_optimization",
-            description=f"几何优化 ({method}/{basis})",
+            description=f"Geometry optimization ({method}/{basis})",
         )
         result.steps.append(step1)
+
+        if progress_callback:
+            progress_callback("Geometry optimization", "running", 0, total_steps)
 
         code = self.template_engine.generate_geometry_opt(
             molecule, method, basis, solvent=solvent
@@ -94,9 +99,12 @@ class WorkflowEngine:
 
         step2 = WorkflowStep(
             name="frequency",
-            description=f"频率计算 ({method}/{basis})",
+            description=f"Frequency calculation ({method}/{basis})",
         )
         result.steps.append(step2)
+
+        if progress_callback:
+            progress_callback("Frequency calculation", "running", 1, total_steps)
 
         freq_code = self.template_engine.generate_frequency(
             molecule, method, basis, solvent=solvent
@@ -135,9 +143,12 @@ class WorkflowEngine:
         if high_basis != basis:
             step3 = WorkflowStep(
                 name="single_point",
-                description=f"高精度单点能 ({method}/{high_basis})",
+                description=f"High-accuracy single-point energy ({method}/{high_basis})",
             )
             result.steps.append(step3)
+
+            if progress_callback:
+                progress_callback("Single-point energy", "running", 2, total_steps)
 
             sp_code = self.template_engine.generate_dft(
                 molecule, method, high_basis, solvent=solvent
@@ -168,16 +179,20 @@ class WorkflowEngine:
         molecule: str,
         methods: list[str],
         basis: str = "6-31g*",
+        progress_callback: Optional[Callable] = None,
     ) -> WorkflowResult:
         result = WorkflowResult()
         mol = get_molecule(molecule)
 
-        for method in methods:
+        for i, method in enumerate(methods):
             step = WorkflowStep(
                 name=f"calc_{method}",
-                description=f"单点能计算 ({method}/{basis})",
+                description=f"Single-point energy ({method}/{basis})",
             )
             result.steps.append(step)
+
+            if progress_callback:
+                progress_callback(f"Computing {method}", "running", i, len(methods))
 
             is_dft = method.upper() not in ["HF", "RHF", "UHF", "ROHF"]
 
@@ -212,6 +227,7 @@ class WorkflowEngine:
         molecule: str,
         method: str = "B3LYP",
         basis_sets: list[str] = None,
+        progress_callback: Optional[Callable] = None,
     ) -> WorkflowResult:
         if basis_sets is None:
             basis_sets = ["6-31g*", "cc-pvdz", "cc-pvtz", "aug-cc-pvdz"]
@@ -219,12 +235,15 @@ class WorkflowEngine:
         result = WorkflowResult()
         mol = get_molecule(molecule)
 
-        for basis in basis_sets:
+        for i, basis in enumerate(basis_sets):
             step = WorkflowStep(
                 name=f"basis_{basis}",
-                description=f"单点能计算 ({method}/{basis})",
+                description=f"Single-point energy ({method}/{basis})",
             )
             result.steps.append(step)
+
+            if progress_callback:
+                progress_callback(f"Basis: {basis}", "running", i, len(basis_sets))
 
             code = self.template_engine.generate_dft(molecule, method, basis)
             step.script = code.to_script()
@@ -374,6 +393,7 @@ class WorkflowEngine:
         n_points: int = 11,
         range_start: float = 0.8,
         range_end: float = 2.0,
+        progress_callback: Optional[Callable] = None,
     ) -> WorkflowResult:
         result = WorkflowResult()
         mol = get_molecule(molecule)
@@ -384,9 +404,12 @@ class WorkflowEngine:
         for i, value in enumerate(scan_values):
             step = WorkflowStep(
                 name=f"scan_{i}",
-                description=f"扫描点 {i+1}/{n_points}: {scan_type}={value:.3f}",
+                description=f"Scan point {i+1}/{n_points}: {scan_type}={value:.3f}",
             )
             result.steps.append(step)
+
+            if progress_callback:
+                progress_callback(f"PES scan: {scan_type}={value:.3f}", "running", i, n_points)
 
             script = self._generate_scan_script(
                 molecule, method, basis, scan_type, atom_indices, value
@@ -424,7 +447,7 @@ class WorkflowEngine:
         value: float,
     ) -> str:
         mol = get_molecule(molecule)
-        from .molecules import get_pyscf_geometry
+        from .molecules.database import get_pyscf_geometry
         geometry = get_pyscf_geometry(mol)
 
         is_dft = method.upper() not in ["HF", "RHF", "UHF", "ROHF"]
@@ -529,6 +552,7 @@ class WorkflowEngine:
         method: str = "B3LYP",
         basis: str = "6-31g*",
         solvent: str = "water",
+        progress_callback: Optional[Callable] = None,
     ) -> WorkflowResult:
         from .methods.solvation import get_solvent
 
@@ -536,8 +560,10 @@ class WorkflowEngine:
         mol = get_molecule(molecule)
         solvent_info = get_solvent(solvent)
 
-        step1 = WorkflowStep(name="gas_opt", description=f"气相几何优化 ({method}/{basis})")
+        step1 = WorkflowStep(name="gas_opt", description=f"Gas-phase geometry optimization ({method}/{basis})")
         result.steps.append(step1)
+        if progress_callback:
+            progress_callback("Gas-phase optimization", "running", 0, 3)
         code = self.template_engine.generate_geometry_opt(molecule, method, basis)
         step1.script = code.to_script()
         step1.status = "running"
@@ -551,11 +577,13 @@ class WorkflowEngine:
             step1.parsed = self.parser.parse_from_stdout(exec_result.stdout)
         else:
             step1.status = "failed"
-            result.summary = "气相优化失败，工作流终止。"
+            result.summary = "Gas-phase optimization failed; workflow terminated."
             return result
 
-        step2 = WorkflowStep(name="gas_freq", description=f"气相频率计算 ({method}/{basis})")
+        step2 = WorkflowStep(name="gas_freq", description=f"Gas-phase frequency calculation ({method}/{basis})")
         result.steps.append(step2)
+        if progress_callback:
+            progress_callback("Gas-phase frequency", "running", 1, 3)
         freq_code = self.template_engine.generate_frequency(molecule, method, basis)
         step2.script = freq_code.to_script()
         step2.status = "running"
@@ -572,9 +600,11 @@ class WorkflowEngine:
 
         step3 = WorkflowStep(
             name="liquid_sp",
-            description=f"液相单点能 ({method}/{basis}, 溶剂: {solvent_info.name_cn})",
+            description=f"Solution-phase single point ({method}/{basis}, solvent: {solvent_info.name_cn})",
         )
         result.steps.append(step3)
+        if progress_callback:
+            progress_callback("Solution-phase calculation", "running", 2, 3)
         solv_code = self.template_engine.generate_solvation(
             molecule, method, basis, solvent=solvent
         )

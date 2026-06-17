@@ -290,12 +290,12 @@ class DiagnosticsEngine:
 
 def format_diagnostics(diagnostics: list[Diagnostic]) -> str:
     if not diagnostics:
-        return "[OK] 未发现明显问题"
+        return "[OK] No issues detected"
 
     lines = []
     level_icons = {
-        "info": "[INFO] ",
-        "warning": "[WARN] ",
+        "info": "[INFO]",
+        "warning": "[WARN]",
         "error": "[FAIL]",
         "critical": "[CRITICAL]",
     }
@@ -305,11 +305,39 @@ def format_diagnostics(diagnostics: list[Diagnostic]) -> str:
         lines.append(f"\n{icon} [{diag.category}] {diag.title}")
         lines.append(f"   {diag.description}")
         if diag.suggestions:
-            lines.append("   建议:")
+            lines.append("   Suggestions:")
             for i, s in enumerate(diag.suggestions, 1):
                 lines.append(f"     {i}. {s}")
         if diag.auto_fix:
-            lines.append(f"   自动修复代码:")
+            lines.append(f"   Auto-fix code:")
             lines.append(f"     {diag.auto_fix}")
 
+    # Append plain-language summary
+    lines.append(f"\n---")
+    lines.append("Summary: " + _plain_language_summary(diagnostics))
+
     return "\n".join(lines)
+
+
+def _plain_language_summary(diagnostics: list[Diagnostic]) -> str:
+    """Generate a plain-language summary of all diagnostics."""
+    errors = [d for d in diagnostics if d.level in ("error", "critical")]
+    warnings = [d for d in diagnostics if d.level == "warning"]
+    infos = [d for d in diagnostics if d.level == "info"]
+
+    if errors:
+        category = errors[0].category
+        summaries = {
+            "scf_convergence": "The calculation failed to converge. Try a smaller basis set or verify the molecular geometry.",
+            "frequency_multiple_imaginary": "The optimized geometry is not a true minimum. Re-optimization with tighter criteria may help.",
+            "geomopt_not_converged": "The geometry optimization did not reach convergence within the allowed steps.",
+        }
+        return summaries.get(category, f"Calculation encountered {len(errors)} error(s) and {len(warnings)} warning(s).")
+
+    if warnings:
+        return f"Calculation completed with {len(warnings)} warning(s). Review the diagnostics above for details."
+
+    if infos:
+        return "Calculation completed without critical issues."
+
+    return "No significant issues detected."

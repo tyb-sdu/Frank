@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-Frank — 计算化学终端智能体
+Frank -- Computational Chemistry Terminal Agent
 
-直接运行此文件启动交互模式:
+Launch interactive mode:
   python run.py
 
-或使用命令:
-  python run.py ask "计算水分子的 B3LYP 能量"
+Or use commands:
+  python run.py ask "Calculate energy of water at B3LYP/6-31G*"
   python run.py list molecules
   python run.py info h2o
 """
 
-from frank.cli import main
+from frank.cli.main_cli import main
 
 if __name__ == "__main__":
     main()

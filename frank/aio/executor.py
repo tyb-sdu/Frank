@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Callable, AsyncIterator
 from enum import Enum
-from .executor_common import enhance_script, classify_error
+from .core.executor_common import enhance_script, classify_error
 
 
 class TaskStatus(Enum):

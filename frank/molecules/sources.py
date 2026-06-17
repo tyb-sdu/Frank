@@ -5,7 +5,7 @@ import urllib.request
 import urllib.parse
 from typing import Optional
 
-from .molecules import Molecule, MOLECULES
+from .database import Molecule, MOLECULES
 
 PUBCHEM_BASE = "https://pubchem.ncbi.nlm.nih.gov/rest/pug"
 _USER_AGENT = "Frank/0.2 (Computational Chemistry Agent)"
@@ -294,7 +294,7 @@ def _try_smiles(text: str) -> Optional[Molecule]:
     if not has_smiles_chars and not is_ring_smiles:
         return None
 
-    from .molecule_utils import smiles_to_molecule
+    from .utils import smiles_to_molecule
     return smiles_to_molecule(text)
 
 
@@ -380,5 +380,5 @@ def _fetch_molecule_by_cid(cid: int, default_name: str = "") -> Optional[Molecul
 
 
 def register_molecule(mol: Molecule) -> None:
-    from .molecules import _add
+    from .database import _add
     _add(mol)

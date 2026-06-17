@@ -88,7 +88,7 @@ class PySCFExecutor:
             error_message = None
 
             if not success:
-                error_type, error_message = classify_error(result.stderr, result.stdout)
+                error_type, error_message, _ = classify_error(result.stderr, result.stdout)
 
             return ExecutionResult(
                 success=success,
@@ -132,7 +132,7 @@ class PySCFExecutor:
         job_name: str = "frank_job",
         original_basis: str = None,
     ) -> tuple[ExecutionResult, list[str]]:
-        from .auto_recovery import (
+        from .recovery import (
             get_recovery_strategies,
             prepare_retry_script,
         )
@@ -151,7 +151,7 @@ class PySCFExecutor:
 
         retry_log = []
         for i, strategy in enumerate(strategies):
-            log_entry = f"重试 {i+1}/{len(strategies)}: {strategy.description}"
+            log_entry = f"Retry {i+1}/{len(strategies)}: {strategy.description}"
             retry_log.append(log_entry)
 
             retry_script = prepare_retry_script(
@@ -162,12 +162,12 @@ class PySCFExecutor:
             result = self.execute(retry_script, retry_name)
 
             if result.success:
-                retry_log.append(f"[OK] 重试 {i+1} 成功！策略: {strategy.strategy}")
+                retry_log.append(f"[OK] Retry {i+1} succeeded (strategy: {strategy.strategy})")
                 return result, retry_log
             else:
-                retry_log.append(f"[FAIL] 重试 {i+1} 失败: {result.error_type}")
+                retry_log.append(f"[FAIL] Retry {i+1} failed: {result.error_type}")
 
-        retry_log.append("[WARN] 所有恢复策略均已尝试，计算失败")
+        retry_log.append("[WARN] All recovery strategies exhausted; calculation failed")
         return result, retry_log
 
 

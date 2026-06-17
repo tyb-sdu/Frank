@@ -659,12 +659,21 @@ def get_molecule(name: str) -> Molecule:
         return MOLECULES[name_no_space]
     if name_lower.replace(" ", "") in MOLECULES:
         return MOLECULES[name_lower.replace(" ", "")]
-    from .molecule_sources import resolve_molecule, register_molecule
+    from .sources import resolve_molecule, register_molecule
     mol = resolve_molecule(name)
     if mol:
         register_molecule(mol)
         return mol
-    raise KeyError(f"未找到分子: {name}")
+
+    # Fuzzy matching fallback
+    import difflib
+    all_names = list(MOLECULES.keys())
+    suggestions = difflib.get_close_matches(name, all_names, n=3, cutoff=0.4)
+    msg = f"Molecule '{name}' not found."
+    if suggestions:
+        msg += f" Did you mean: {', '.join(suggestions)}?"
+    msg += " Use 'search <name>' to query PubChem, or 'list molecules' to see available entries."
+    raise KeyError(msg)
 
 
 def list_molecules(tag: Optional[str] = None) -> list[Molecule]:

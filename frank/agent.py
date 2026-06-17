@@ -1,10 +1,10 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
-from .molecules import get_molecule, list_molecules, search_molecules, Molecule
-from .molecule_sources import resolve_molecule, register_molecule
-from .basis_sets import recommend_basis_set, get_basis_set, list_basis_sets
+from .molecules.database import get_molecule, list_molecules, search_molecules, Molecule
+from .molecules.sources import resolve_molecule, register_molecule
+from .basis import recommend_basis_set, get_basis_set, list_basis_sets
 from .methods.dft import get_dft_functional, list_dft_functionals, recommend_dft_functional
 from .methods.post_hf import get_post_hf_method, list_post_hf_methods, recommend_post_hf_method
 from .methods.excited import get_excited_method, list_excited_methods, recommend_excited_method
@@ -12,10 +12,35 @@ from .methods.solvation import get_solvent, list_solvents, recommend_solvent
 from .methods.casscf import recommend_casscf_space
 from .templates.pyscf_templates import PySCFTemplateEngine
 from .templates.base import GeneratedCode
-from .executor import PySCFExecutor, ExecutionResult
-from .parser import PySCFOutputParser
-from .diagnostics import DiagnosticsEngine, format_diagnostics
-from .interpreter import ResultInterpreter
+from .core.executor import PySCFExecutor, ExecutionResult
+from .core.parser import PySCFOutputParser
+from .core.diagnostics import DiagnosticsEngine, format_diagnostics
+from .core.interpreter import ResultInterpreter
+from .config import get_api_key
+
+
+@dataclass
+class SessionContext:
+    """Persistent session state across interactive queries."""
+    last_molecule: Optional[str] = None
+    last_method: Optional[str] = None
+    last_basis: Optional[str] = None
+    last_calc_type: Optional[str] = None
+    recent_molecules: list[str] = field(default_factory=list)
+
+    def update(self, intent: "ParsedIntent") -> None:
+        """Update session state from a parsed intent."""
+        if intent.molecule:
+            self.last_molecule = intent.molecule
+            if intent.molecule not in self.recent_molecules:
+                self.recent_molecules.insert(0, intent.molecule)
+                self.recent_molecules = self.recent_molecules[:5]
+        if intent.method:
+            self.last_method = intent.method
+        if intent.basis:
+            self.last_basis = intent.basis
+        if intent.calc_type:
+            self.last_calc_type = intent.calc_type
 
 
 @dataclass
@@ -124,31 +149,121 @@ class FrankAgent:
         self.parser = PySCFOutputParser()
         self.diagnostics = DiagnosticsEngine()
         self.interpreter = ResultInterpreter()
+        self.session = SessionContext()
 
-    def parse_intent(self, text: str) -> ParsedIntent:
+    def parse_intent(self, text: str, use_session: bool = True) -> ParsedIntent:
         intent = ParsedIntent()
         text_lower = text.lower()
 
-        intent.molecule = self._extract_molecule(text, text_lower)
+        # Stage 1: Attempt LLM-powered intent parsing
+        llm_result = None
+        if get_api_key():
+            from .llm import parse_intent_with_llm
+            llm_result = parse_intent_with_llm(text)
 
-        if not intent.molecule:
-            smiles = self._extract_smiles(text)
-            if smiles:
-                intent.molecule = self._register_smiles_molecule(smiles)
+        if llm_result and llm_result.get("molecule"):
+            # Use LLM result as primary source
+            intent.molecule = llm_result.get("molecule")
+            intent.method = llm_result.get("method")
+            intent.basis = llm_result.get("basis")
+            intent.calc_type = llm_result.get("calc_type")
+            intent.solvent = llm_result.get("solvent")
+            intent.n_states = llm_result.get("n_states")
+            intent.norb = llm_result.get("norb")
+            intent.nelec = llm_result.get("nelec")
+            intent.accuracy = llm_result.get("accuracy", "medium")
+            # Resolve molecule through the standard pipeline to get canonical name
+            resolved = self._resolve_molecule_name(intent.molecule)
+            if resolved:
+                intent.molecule = resolved
+            intent.confidence = min(1.0, llm_result.get("confidence", 0.8) + 0.1)
+        else:
+            # Stage 2: Fall back to keyword-based extraction
+            intent.molecule = self._extract_molecule(text, text_lower)
 
-        if not intent.molecule:
-            intent.molecule = self._resolve_external_molecule(text)
+            if not intent.molecule:
+                smiles = self._extract_smiles(text)
+                if smiles:
+                    intent.molecule = self._register_smiles_molecule(smiles)
 
-        intent.calc_type = self._extract_calc_type(text, text_lower)
-        intent.method = self._extract_method(text, text_lower)
-        intent.basis = self._extract_basis(text, text_lower)
-        intent.solvent = self._extract_solvent(text, text_lower)
-        intent.n_states = self._extract_n_states(text)
-        intent.norb, intent.nelec = self._extract_casscf_space(text)
+            if not intent.molecule:
+                intent.molecule = self._resolve_external_molecule(text)
+
+            intent.calc_type = self._extract_calc_type(text, text_lower)
+            intent.method = self._extract_method(text, text_lower)
+            intent.basis = self._extract_basis(text, text_lower)
+            intent.solvent = self._extract_solvent(text, text_lower)
+            intent.n_states = self._extract_n_states(text)
+            intent.norb, intent.nelec = self._extract_casscf_space(text)
+
+        # Apply session context for missing fields
+        if use_session:
+            self._apply_session_defaults(intent)
+
         self._infer_defaults(intent)
-        intent.confidence = self._calculate_confidence(intent)
+        if llm_result is None:
+            intent.confidence = self._calculate_confidence(intent)
 
         return intent
+
+    def _resolve_molecule_name(self, name: str) -> Optional[str]:
+        """Resolve a molecule name through the standard pipeline.
+
+        Returns the canonical molecule name or None.
+        """
+        # Try direct lookup
+        try:
+            get_molecule(name)
+            return name
+        except KeyError:
+            pass
+
+        # Try Chinese alias
+        cn_aliases = {
+            "水": "h2o", "氨": "nh3", "甲烷": "ch4", "乙烯": "c2h4",
+            "乙炔": "c2h2", "苯": "c6h6", "甲醛": "h2co", "甲醇": "ch3oh",
+            "乙醇": "c2h5oh", "乙酸": "ch3cooh", "丙酮": "ch3coch3",
+            "二氧化碳": "co2", "一氧化碳": "co", "氮气": "n2",
+            "氧气": "o2", "氢气": "h2", "氟化氢": "hf", "氯化氢": "hcl",
+        }
+        if name.lower() in cn_aliases:
+            return cn_aliases[name.lower()]
+
+        # Try molecular formula
+        try:
+            mol = get_molecule(name.lower().replace(" ", ""))
+            return mol.name
+        except KeyError:
+            pass
+
+        # Try external resolution (PubChem)
+        try:
+            mol = resolve_molecule(name)
+            if mol:
+                register_molecule(mol)
+                return mol.name
+        except Exception:
+            pass
+
+        return None
+
+    def _apply_session_defaults(self, intent: ParsedIntent) -> None:
+        """Fill missing intent fields from session context."""
+        if not intent.molecule and self.session.last_molecule:
+            intent.molecule = self.session.last_molecule
+            intent.warnings.append(
+                f"Reusing molecule from previous query: {self.session.last_molecule}"
+            )
+        if not intent.method and self.session.last_method:
+            intent.method = self.session.last_method
+            intent.warnings.append(
+                f"Reusing method from previous query: {self.session.last_method}"
+            )
+        if not intent.basis and self.session.last_basis:
+            intent.basis = self.session.last_basis
+            intent.warnings.append(
+                f"Reusing basis set from previous query: {self.session.last_basis}"
+            )
 
     def _extract_molecule(self, text: str, text_lower: str) -> Optional[str]:
         cn_aliases = {
@@ -278,8 +393,8 @@ class FrankAgent:
 
     def _register_smiles_molecule(self, smiles: str) -> Optional[str]:
         try:
-            from .molecule_utils import smiles_to_molecule
-            from .molecules import MOLECULES
+            from .molecules.utils import smiles_to_molecule
+            from .molecules.database import MOLECULES
 
             mol = smiles_to_molecule(smiles)
             if mol:
@@ -389,7 +504,10 @@ class FrankAgent:
 
     def _infer_defaults(self, intent: ParsedIntent):
         if not intent.molecule:
-            intent.warnings.append("未识别到分子。支持内置名称、SMILES、XYZ 文件路径或 PubChem 分子名")
+            intent.warnings.append(
+                "No molecule identified. Supported inputs: built-in name, SMILES string, "
+                "XYZ file path, or PubChem molecule name. Use 'search <name>' to query PubChem."
+            )
 
         if not intent.calc_type:
             method_lower = (intent.method or "").lower()
@@ -491,14 +609,35 @@ class FrankAgent:
         return False
 
     def _chat_reply(self, text: str) -> str:
+        # Try LLM first for natural conversational response
+        if get_api_key():
+            from .llm import chat_reply_with_llm
+            llm_reply = chat_reply_with_llm(text)
+            if llm_reply:
+                return llm_reply
+
+        # Fallback: hardcoded templates (used when LLM is unavailable)
         text_lower = text.lower().strip()
         if any(kw in text_lower for kw in ["你好", "您好", "hi", "hello", "hey"]):
-            return "你好！我是 Frank，计算化学终端智能体。输入计算需求即可开始，例如：\n  • 计算水分子在 B3LYP/6-31G* 水平的能量\n  • 用 MP2/cc-pVDZ 计算氨的几何优化\n  • search caffeine（搜索 PubChem）\n输入 help 查看更多帮助。"
+            return (
+                "Hello. I am Frank, a computational chemistry terminal agent. "
+                "Please describe your calculation request. Examples:\n"
+                "  - Calculate the energy of water at B3LYP/6-31G* level\n"
+                "  - Optimize ammonia geometry with MP2/cc-pVDZ\n"
+                "  - search caffeine (query PubChem)\n"
+                "Type 'help' for complete usage information."
+            )
         if any(kw in text_lower for kw in ["谢谢", "感谢", "thanks"]):
-            return "不客气！有计算需求随时输入。"
+            return "You are welcome. Enter a calculation request when ready."
         if any(kw in text_lower for kw in ["再见", "拜拜", "bye"]):
-            return "再见！"
-        return "抱歉，我是计算化学助手，只能处理计算化学相关的请求。\n请输入分子名称和计算需求，例如：\n  • 计算水分子在 B3LYP/6-31G* 水平的能量\n  • search caffeine（搜索 PubChem 分子）\n输入 help 查看完整帮助。"
+            return "Session ended."
+        return (
+            "I am a computational chemistry assistant. "
+            "Please provide a molecule name and calculation type. Examples:\n"
+            "  - Calculate the energy of water at B3LYP/6-31G* level\n"
+            "  - search caffeine (query PubChem)\n"
+            "Type 'help' for complete usage information."
+        )
 
     def process_request(self, text: str) -> dict:
         if not self._is_chemistry_query(text):
@@ -517,8 +656,9 @@ class FrankAgent:
         if intent.molecule:
             try:
                 code = self.generate_code(intent)
+                self.session.update(intent)
             except Exception as e:
-                intent.warnings.append(f"代码生成失败: {str(e)}")
+                intent.warnings.append(f"Code generation failed: {str(e)}")
 
         script = code.to_script() if code else ""
 
@@ -536,8 +676,9 @@ class FrankAgent:
         if intent.molecule:
             try:
                 code = self.generate_code(intent)
+                self.session.update(intent)
             except Exception as e:
-                intent.warnings.append(f"代码生成失败: {str(e)}")
+                intent.warnings.append(f"Code generation failed: {str(e)}")
 
         if not code:
             return {
@@ -561,6 +702,7 @@ class FrankAgent:
         )
 
         parsed = {}
+        plain_language = ""
         if execution.success:
             parsed = self.parser.parse_from_stdout(execution.stdout)
 
@@ -575,6 +717,9 @@ class FrankAgent:
             diagnostics.extend(self.diagnostics.diagnose_scf_convergence(
                 execution.stdout
             ))
+            # Get plain-language explanation for the error
+            from .core.executor_common import classify_error
+            _, _, plain_language = classify_error(execution.stderr, execution.stdout)
 
         interpretation = ""
         if interpret and parsed:
@@ -594,6 +739,7 @@ class FrankAgent:
             "interpretation": interpretation,
             "retry_log": retry_log,
             "warnings": intent.warnings,
+            "plain_language": plain_language,
         }
 
     def run_workflow(
@@ -604,7 +750,7 @@ class FrankAgent:
         basis: str = "6-31g*",
         **kwargs
     ):
-        from .workflows import WorkflowEngine
+        from .workflows.engine import WorkflowEngine
 
         workflow_engine = WorkflowEngine(executor=self.executor)
 
@@ -646,33 +792,65 @@ class FrankAgent:
         else:
             raise ValueError(f"未知工作流类型: {workflow_type}")
 
+    def adjust_intent(self, intent: ParsedIntent, overrides: dict) -> ParsedIntent:
+        """Create a new ParsedIntent with specified fields overridden.
+
+        Args:
+            intent: The original parsed intent.
+            overrides: Dict mapping field names to new values.
+
+        Returns:
+            A new ParsedIntent with overrides applied.
+        """
+        new_intent = ParsedIntent(
+            molecule=overrides.get("molecule", intent.molecule),
+            method=overrides.get("method", intent.method),
+            basis=overrides.get("basis", intent.basis),
+            calc_type=overrides.get("calc_type", intent.calc_type),
+            solvent=overrides.get("solvent", intent.solvent),
+            n_states=overrides.get("n_states", intent.n_states),
+            norb=overrides.get("norb", intent.norb),
+            nelec=overrides.get("nelec", intent.nelec),
+            accuracy=overrides.get("accuracy", intent.accuracy),
+            output_file=overrides.get("output_file", intent.output_file),
+            confidence=intent.confidence,
+            warnings=list(intent.warnings),
+        )
+        return new_intent
+
     def get_help(self) -> str:
         return """
-Frank — 计算化学终端智能体
+Frank -- Computational Chemistry Terminal Agent
 
-使用方式:
-  直接输入你的计算需求，例如：
-  - "计算水分子在 B3LYP/6-31G* 水平的能量"
-  - "用 MP2/cc-pVDZ 计算氨的几何优化"
-  - "计算苯的 TDDFT 激发态（6个态）"
-  - "用 CASSCF(6,6)/cc-pVDZ 计算氮气"
-  - "计算乙醇在水中的溶剂化能"
+Usage:
+  Describe your calculation request in natural language. Examples:
+  - "Calculate the energy of water at B3LYP/6-31G* level"
+  - "Optimize ammonia geometry with MP2/cc-pVDZ"
+  - "Compute benzene TDDFT excited states (6 states)"
+  - "Run CASSCF(6,6)/cc-pVDZ on nitrogen"
+  - "Calculate solvation energy of ethanol in water"
 
-分子输入:
-  - 内置名称: 使用 `frank list molecules` 查看
-  - PubChem 查询: `frank search <名称>` 或直接在计算请求中使用分子名
-  - XYZ 文件: `frank import <file.xyz>` 或直接使用文件路径
-  - SMILES 字符串: 直接输入 SMILES（如 CCO、c1ccccc1）
+Molecule input:
+  - Built-in names: use 'frank list molecules' to browse
+  - PubChem lookup: 'frank search <name>' or use the name directly in a query
+  - XYZ files: 'frank import <file.xyz>' or provide the file path directly
+  - SMILES strings: enter directly (e.g., CCO, c1ccccc1)
 
-支持的方法:
+Supported methods:
   - HF, RHF, UHF
-  - DFT: B3LYP, PBE, PBE0, M06-2X, wB97X-D, HSE06 等
-  - 后 HF: MP2, CCSD, CCSD(T)
-  - 激发态: TDDFT, CIS, EOM-CCSD
-  - 多参考态: CASSCF, NEVPT2
+  - DFT: B3LYP, PBE, PBE0, M06-2X, wB97X-D, CAM-B3LYP, HSE06
+  - Post-HF: MP2, CCSD, CCSD(T)
+  - Excited state: TDDFT, CIS, EOM-CCSD
+  - Multi-reference: CASSCF, NEVPT2, CASPT2
 
-支持的基组:
-  - 劈裂价层: 6-31G*, 6-311G**
-  - 相关一致: cc-pVDZ, cc-pVTZ, aug-cc-pVDZ
+Supported basis sets:
+  - Split-valence: 6-31G*, 6-311G**
+  - Correlation-consistent: cc-pVDZ, cc-pVTZ, aug-cc-pVDZ
   - Ahlrichs: def2-SVP, def2-TZVP
+  - Minimal: STO-3G
+
+Workflow aliases:
+  - of -> opt_freq, mc/compare -> method_comparison
+  - bc/converge -> basis_convergence, pes -> pes_scan
+  - solv -> solvation
 """
