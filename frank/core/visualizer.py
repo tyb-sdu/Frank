@@ -155,6 +155,54 @@ def plot_ir_spectrum(result, title: str = "IR 振动光谱"):
         print(f"  C=O 伸缩: {', '.join(f'{f:.0f}' for f in co)} cm⁻¹")
 
 
+def plot_ir_with_reference(
+    result,
+    reference_peaks: list,
+    title: str = "IR 光谱 (计算 vs 实验)",
+):
+    """Plot calculated IR with experimental reference peaks overlaid."""
+    _check_plotext()
+
+    if not result.frequencies:
+        print("[WARN] 无频率数据，跳过光谱图")
+        return
+
+    real_freqs = sorted(f for f in result.frequencies if f > 0)
+    if not real_freqs:
+        return
+
+    bin_size = 50
+    min_f = max(0, int(min(real_freqs) / bin_size) * bin_size)
+    max_f = max(
+        int(max(real_freqs) / bin_size) * bin_size + bin_size,
+        int(max((p.frequency for p in reference_peaks), default=0) / bin_size) * bin_size + bin_size,
+    )
+
+    bins = list(range(min_f, max_f + 1, bin_size))
+    counts = [0] * (len(bins) - 1)
+    for f in real_freqs:
+        idx = int((f - min_f) / bin_size)
+        if 0 <= idx < len(counts):
+            counts[idx] += 1
+
+    bin_labels = [f"{b}" for b in bins[:-1]]
+    plt.clear_figure()
+    plt.title(title)
+    plt.xlabel("频率 (cm⁻¹)")
+    plt.ylabel("振动模式数")
+    plt.bar(bin_labels, counts, color="red", width=0.5)
+
+    if reference_peaks:
+        ref_labels = [f"R{p.frequency:.0f}" for p in reference_peaks[:8]]
+        ref_counts = [1] * len(ref_labels)
+        print(f"\n  实验参考峰 ({len(reference_peaks)} 个):")
+        for p in reference_peaks[:8]:
+            assign = f" ({p.assignment})" if getattr(p, "assignment", "") else ""
+            print(f"    {p.frequency:.0f} cm⁻¹{assign}")
+
+    plt.show()
+
+
 def plot_method_comparison(workflow_result, title: str = "方法对比"):
     _check_plotext()
 

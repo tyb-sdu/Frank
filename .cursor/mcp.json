@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "frank": {
+      "command": "${workspaceFolder}/venv/bin/python",
+      "args": ["-m", "frank.mcp"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "FRANK_TIMEOUT": "600"
+      }
+    }
+  }
+}

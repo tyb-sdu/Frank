@@ -647,6 +647,122 @@ _add(Molecule(
     electrons=54, tags=["cycloalkane"],
 ))
 
+# Ions and tautomers (Aitomia benchmark support)
+_add(Molecule(
+    name="h+", name_cn="质子", formula="H+", smiles="[H+]",
+    atom_xyz="H  0.000  0.000  0.000",
+    charge=1, spin=0, electrons=0, tags=["ion", "cation"],
+))
+
+_add(Molecule(
+    name="ethenol", name_cn="乙烯醇(烯醇式乙醛)", formula="C2H4O", smiles="C=C(O)",
+    atom_xyz="""
+    C  0.000  0.000  0.000
+    C  0.000  0.000  1.340
+    O  0.000  1.120  1.890
+    H  0.000  0.929 -0.587
+    H  0.000 -0.929 -0.587
+    H  0.000 -0.929  1.890
+    H  0.000  1.120  2.850
+    """,
+    electrons=24, tags=["tautomer", "enol"],
+))
+
+_add(Molecule(
+    name="propen2ol", name_cn="丙烯-2-醇(烯醇式丙酮)", formula="C3H6O", smiles="CC(=C)O",
+    atom_xyz="""
+    C  0.000  0.000  0.000
+    C  1.520  0.000  0.000
+    C  2.080  1.220  0.000
+    O  2.080 -1.120  0.000
+    H -0.370  0.510 -0.890
+    H -0.370  0.510  0.890
+    H -0.370 -1.020  0.000
+    H  3.160  1.220  0.000
+    H  2.080 -1.880  0.660
+    """,
+    electrons=32, tags=["tautomer", "enol"],
+))
+
+_add(Molecule(
+    name="butadiene", name_cn="1,3-丁二烯", formula="C4H6", smiles="C=CC=C",
+    atom_xyz="""
+    C  0.000  0.000  0.000
+    C  1.340  0.000  0.000
+    C  2.030  1.210  0.000
+    C  3.370  1.210  0.000
+    H -0.370  0.510 -0.890
+    H -0.370  0.510  0.890
+    H  1.710 -0.510 -0.890
+    H  1.710 -0.510  0.890
+    H  3.740  0.700  0.890
+    H  3.740  1.720 -0.890
+    """,
+    electrons=30, tags=["conjugation", "alkene"],
+))
+
+_add(Molecule(
+    name="hexatriene", name_cn="1,3,5-己三烯", formula="C6H8", smiles="C=CC=CC=C",
+    atom_xyz="""
+    C  0.000  0.000  0.000
+    C  1.340  0.000  0.000
+    C  2.030  1.210  0.000
+    C  3.370  1.210  0.000
+    C  4.060  0.000  0.000
+    C  5.400  0.000  0.000
+    H -0.370  0.510 -0.890
+    H -0.370  0.510  0.890
+    H  1.710 -0.510 -0.890
+    H  1.710 -0.510  0.890
+    H  3.740  1.720  0.890
+    H  3.740  1.720 -0.890
+    H  4.430 -0.510 -0.890
+    H  5.770  0.510  0.890
+    """,
+    electrons=42, tags=["conjugation", "alkene"],
+))
+
+_add(Molecule(
+    name="aniline", name_cn="苯胺", formula="C6H7N", smiles="Nc1ccccc1",
+    atom_xyz="""
+    N  0.000  0.000  0.000
+    C  1.400  0.000  0.000
+    C  2.100  1.210  0.000
+    C  3.500  1.210  0.000
+    C  4.200  0.000  0.000
+    C  3.500 -1.210  0.000
+    C  2.100 -1.210  0.000
+    H -0.360  0.510 -0.890
+    H -0.360  0.510  0.890
+    H  1.560  2.150  0.000
+    H  4.040  2.150  0.000
+    H  5.290  0.000  0.000
+    H  4.040 -2.150  0.000
+    H  1.560 -2.150  0.000
+    """,
+    electrons=52, tags=["aromatic", "amine"],
+))
+
+# Common name aliases
+MOLECULE_ALIASES: dict[str, str] = {
+    "acetaldehyde": "ch3cho",
+    "乙醛": "ch3cho",
+    "acetone": "ch3coch3",
+    "丙酮": "ch3coch3",
+    "water": "h2o",
+    "水": "h2o",
+    "ammonia": "nh3",
+    "氨": "nh3",
+    "benzene": "c6h6",
+    "苯": "c6h6",
+    "ethene": "c2h4",
+    "乙烯": "c2h4",
+    "ethanol": "ch3ch2oh",
+    "乙醇": "ch3ch2oh",
+    "methanol": "ch3oh",
+    "甲醇": "ch3oh",
+}
+
 
 def get_molecule(name: str) -> Molecule:
     if name in MOLECULES:
@@ -654,6 +770,10 @@ def get_molecule(name: str) -> Molecule:
     name_lower = name.lower()
     if name_lower in MOLECULES:
         return MOLECULES[name_lower]
+    if name_lower in MOLECULE_ALIASES:
+        return MOLECULES[MOLECULE_ALIASES[name_lower]]
+    if name in MOLECULE_ALIASES:
+        return MOLECULES[MOLECULE_ALIASES[name]]
     name_no_space = name.replace(" ", "").replace("_", "")
     if name_no_space in MOLECULES:
         return MOLECULES[name_no_space]

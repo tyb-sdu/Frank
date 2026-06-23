@@ -250,30 +250,76 @@ def _build_formula(atoms: list[tuple[str, float, float, float]]) -> str:
     return "".join(parts)
 
 
-def resolve_molecule(query: str) -> Optional[Molecule]:
+def resolve_molecule(query: str, validate: bool = True) -> Optional[Molecule]:
     query = query.strip()
     if not query:
         return None
 
     mol = _try_smiles(query)
     if mol:
-        return mol
+        return _finalize_molecule(mol, validate)
 
     if _looks_like_file_path(query):
         mol = load_xyz_file(query)
         if mol:
-            return mol
+            return _finalize_molecule(mol, validate)
 
     mol = search_pubchem(query)
     if mol:
-        return mol
+        return _finalize_molecule(mol, validate)
+
+    # Aitomia-style fallback: NIH Cactus → RDKit 3D embedding
+    mol = _resolve_via_cactus(query)
+    if mol:
+        return _finalize_molecule(mol, validate)
 
     if _looks_like_smiles(query):
         mol = search_pubchem_by_smiles(query)
         if mol:
-            return mol
+            return _finalize_molecule(mol, validate)
 
     return None
+
+
+def _resolve_via_cactus(name: str) -> Optional[Molecule]:
+    """PubChem fallback: resolve name to SMILES via NIH Cactus, then build 3D geometry."""
+    from .validation import resolve_smiles_via_cactus
+
+    smiles = resolve_smiles_via_cactus(name)
+    if not smiles:
+        return None
+
+    atoms = _smiles_to_atoms(smiles)
+    if not atoms:
+        return None
+
+    atom_xyz_lines = [f"{s}  {x:.6f}  {y:.6f}  {z:.6f}" for s, x, y, z in atoms]
+    atom_xyz = "\n".join(atom_xyz_lines)
+    electrons = _count_electrons(atoms)
+    formula = _build_formula(atoms)
+    mol_name = name.strip().lower().replace(" ", "_").replace("-", "_")
+
+    return Molecule(
+        name=mol_name,
+        name_cn=name,
+        formula=formula,
+        smiles=smiles,
+        atom_xyz=atom_xyz,
+        charge=0,
+        spin=0,
+        electrons=electrons,
+        tags=["cactus", "rdkit_embed"],
+    )
+
+
+def _finalize_molecule(mol: Molecule, validate: bool) -> Optional[Molecule]:
+    if not validate or not mol.atom_xyz.strip():
+        return mol if mol.atom_xyz.strip() else None
+    from .validation import validate_structure, count_elements_from_xyz
+
+    if not count_elements_from_xyz(mol):
+        return None
+    return mol
 
 
 def _try_smiles(text: str) -> Optional[Molecule]:

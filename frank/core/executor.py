@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 from .executor_common import enhance_script, classify_error, extract_results_from_stdout
+from .workdir import create_run_directory, RunDirectory
 
 
 @dataclass
@@ -33,14 +34,24 @@ class ExecutionResult:
 
 
 class PySCFExecutor:
-    def __init__(self, work_dir: Optional[str] = None, timeout: int = 600):
+    def __init__(self, work_dir: Optional[str] = None, timeout: int = 600, persist_runs: bool = True):
         self.work_dir = work_dir
         self.timeout = timeout
+        self.persist_runs = persist_runs
+        self.last_run_dir: Optional[RunDirectory] = None
 
     def execute(self, script: str, job_name: str = "frank_job") -> ExecutionResult:
+        run_dir = None
         if self.work_dir:
             work_dir = Path(self.work_dir)
             work_dir.mkdir(parents=True, exist_ok=True)
+        elif self.persist_runs:
+            run_dir = create_run_directory(job_name)
+            if run_dir:
+                work_dir = run_dir.path
+                self.last_run_dir = run_dir
+            else:
+                work_dir = Path(tempfile.mkdtemp(prefix="frank_"))
         else:
             work_dir = Path(tempfile.mkdtemp(prefix="frank_"))
 
@@ -90,7 +101,7 @@ class PySCFExecutor:
             if not success:
                 error_type, error_message, _ = classify_error(result.stderr, result.stdout)
 
-            return ExecutionResult(
+            exec_result = ExecutionResult(
                 success=success,
                 return_code=result.returncode,
                 stdout=result.stdout,
@@ -102,6 +113,9 @@ class PySCFExecutor:
                 error_message=error_message,
                 extracted_results=extracted,
             )
+            if run_dir:
+                run_dir.save_execution(exec_result, {"job_name": job_name})
+            return exec_result
 
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time

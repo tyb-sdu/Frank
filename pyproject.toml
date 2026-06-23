@@ -29,14 +29,19 @@ dependencies = [
     "rich>=13.0.0",
     "click>=8.0.0",
     "pyyaml>=6.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
 ]
 
 [project.optional-dependencies]
 psi4 = ["psi4>=1.8"]
-dev = ["pytest>=7.0", "pytest-cov"]
+mcp = ["mcp>=1.0"]
+langgraph = ["langgraph>=0.2", "langchain-core>=0.3"]
+dev = ["pytest>=7.0", "pytest-cov", "mcp>=1.0", "langgraph>=0.2", "langchain-core>=0.3"]
 
 [project.scripts]
 frank = "frank.cli.main_cli:main"
+frank-mcp = "frank.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["frank"]

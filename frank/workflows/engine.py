@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Callable, Optional
-from .core.executor import PySCFExecutor, ExecutionResult
-from .core.parser import PySCFOutputParser
-from .core.diagnostics import DiagnosticsEngine, Diagnostic
-from .templates.pyscf_templates import PySCFTemplateEngine
-from .molecules.database import get_molecule
+from ..core.executor import PySCFExecutor, ExecutionResult
+from ..core.parser import PySCFOutputParser
+from ..core.diagnostics import DiagnosticsEngine, Diagnostic
+from ..templates.pyscf_templates import PySCFTemplateEngine
+from ..molecules.database import get_molecule
 
 
 @dataclass
@@ -447,11 +447,11 @@ class WorkflowEngine:
         value: float,
     ) -> str:
         mol = get_molecule(molecule)
-        from .molecules.database import get_pyscf_geometry
+        from ..molecules.database import get_pyscf_geometry
         geometry = get_pyscf_geometry(mol)
 
         is_dft = method.upper() not in ["HF", "RHF", "UHF", "ROHF"]
-        from .methods.scf import choose_scf_type
+        from ..methods.scf import choose_scf_type
         scf_type = choose_scf_type(mol.spin)
 
         a1, a2 = atom_indices
@@ -554,7 +554,7 @@ class WorkflowEngine:
         solvent: str = "water",
         progress_callback: Optional[Callable] = None,
     ) -> WorkflowResult:
-        from .methods.solvation import get_solvent
+        from ..methods.solvation import get_solvent
 
         result = WorkflowResult()
         mol = get_molecule(molecule)

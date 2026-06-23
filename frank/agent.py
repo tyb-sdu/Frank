@@ -127,9 +127,11 @@ SOLVENT_KEYWORDS = {
 CHEMISTRY_KEYWORDS = [
     "计算", "算", "能量", "优化", "频率", "激发", "光谱", "溶剂", "活性空间",
     "基组", "泛函", "单点", "几何", "振动", "热力学", "吸收", "电荷", "布居",
+    "反应", "反应能", "反应焓", "互变异构", "共轭", "质子亲和",
     "calculate", "compute", "energy", "optimize", "frequency", "excited",
     "spectrum", "solvent", "basis", "functional", "geometry", "vibration",
-    "smiles", "xyz", "import", "search", "workflow", "run",
+    "reaction", "thermochemistry", "tautomer", "conjugation", "proton affinity",
+    "smiles", "xyz", "import", "search", "workflow", "run", "plan", "auto",
     "hf", "b3lyp", "pbe", "mp2", "ccsd", "tddft", "casscf",
     "6-31g", "cc-pvdz", "cc-pvtz", "def2",
     "pcm", "smd", "dft", "scf",
@@ -713,13 +715,23 @@ class FrankAgent:
                 parsed.update(log_parsed)
 
         diagnostics = []
+        error_diagnosis = ""
         if execution.error_type:
             diagnostics.extend(self.diagnostics.diagnose_scf_convergence(
                 execution.stdout
             ))
-            # Get plain-language explanation for the error
             from .core.executor_common import classify_error
+            from .core.error_diagnosis import diagnose_failure, format_diagnosis
             _, _, plain_language = classify_error(execution.stderr, execution.stdout)
+            diag = diagnose_failure(
+                stderr=execution.stderr,
+                stdout=execution.stdout,
+                output_dir=execution.output_dir,
+                job_context=f"{intent.molecule} {intent.method}/{intent.basis} {intent.calc_type}",
+            )
+            error_diagnosis = format_diagnosis(diag)
+            if diag.likely_cause and not plain_language:
+                plain_language = diag.likely_cause
 
         interpretation = ""
         if interpret and parsed:
@@ -740,6 +752,7 @@ class FrankAgent:
             "retry_log": retry_log,
             "warnings": intent.warnings,
             "plain_language": plain_language,
+            "error_diagnosis": error_diagnosis,
         }
 
     def run_workflow(
@@ -791,6 +804,47 @@ class FrankAgent:
             )
         else:
             raise ValueError(f"未知工作流类型: {workflow_type}")
+
+    def plan_workflow(self, text: str):
+        """Plan a multi-step workflow from natural language (Aitomia-style orchestrator)."""
+        from .orchestrator.planner import WorkflowPlanner
+        return WorkflowPlanner().plan(text)
+
+    def run_autonomous(self, text: str, progress_callback=None):
+        """Plan and autonomously execute a complex multi-step workflow."""
+        from .orchestrator.engine import OrchestratorEngine
+
+        plan = self.plan_workflow(text)
+        if not plan.is_complex:
+            return {
+                "plan": plan,
+                "result": None,
+                "summary": "",
+                "success": False,
+                "warnings": plan.warnings + [
+                    "Query does not require a complex workflow; use 'run' for single calculations."
+                ],
+            }
+
+        orchestrator = OrchestratorEngine(executor=self.executor, timeout=self.executor.timeout)
+        result = orchestrator.execute(plan, progress_callback=progress_callback)
+        return {
+            "plan": plan,
+            "result": result,
+            "summary": result.summary,
+            "success": result.success,
+            "warnings": plan.warnings + result.warnings,
+        }
+
+    def explain(self, question: str) -> str:
+        """Answer computational chemistry questions using the knowledge base (RAG-lite)."""
+        from .knowledge.base import KnowledgeRetriever
+        return KnowledgeRetriever().explain(question)
+
+    def is_complex_query(self, text: str) -> bool:
+        """Detect whether a query needs multi-agent orchestration."""
+        plan = self.plan_workflow(text)
+        return plan.is_complex and plan.confidence >= 0.5
 
     def adjust_intent(self, intent: ParsedIntent, overrides: dict) -> ParsedIntent:
         """Create a new ParsedIntent with specified fields overridden.
@@ -853,4 +907,20 @@ Workflow aliases:
   - of -> opt_freq, mc/compare -> method_comparison
   - bc/converge -> basis_convergence, pes -> pes_scan
   - solv -> solvation
+
+Multi-agent orchestration (Aitomia-inspired):
+  - plan <query>     Design a multi-step workflow without executing
+  - auto <query>     Autonomously plan and execute complex workflows
+  - explain <question>  Query method/workflow knowledge (RAG-lite)
+
+Complex workflow examples:
+  - "Calculate reaction energy: 2 h2 + o2 -> 2 h2o"
+  - "Compare tautomers of acetaldehyde"
+  - "Compare UV absorption of ethene, butadiene, hexatriene"
+  - "Diels-Alder reaction energy of cyclopentadiene and maleimide"
+  - "Search conformers of salicylic acid"
+  - "NH3 proton affinity"
+
+Run directories:
+  Calculation outputs are saved under ~/.frank/runs/ (Aitomia-style reproducibility).
 """

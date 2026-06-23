@@ -6,11 +6,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.syntax import Syntax
 from rich.markdown import Markdown
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 from rich.text import Text
 
 from .. import __version__
 from ..agent import FrankAgent
+from .agent_factory import create_agent
 from ..molecules.database import list_molecules, get_molecule, search_molecules, get_xyz_block, list_tags
 from ..basis import list_basis_sets
 from ..methods.dft import list_dft_functionals, list_dft_categories
@@ -129,6 +130,8 @@ def print_execution_result(result: dict, show_plot: bool = True):
 
     if execution.success:
         console.print(f"\n[OK] Calculation succeeded (duration {execution.duration:.1f} s)", style="green")
+        if execution.output_dir:
+            console.print(f"   Run directory: {execution.output_dir}", style="dim")
     else:
         console.print(f"\n[FAIL] Calculation failed", style="red")
         if execution.error_type:
@@ -139,6 +142,9 @@ def print_execution_result(result: dict, show_plot: bool = True):
         plain = result.get("plain_language", "")
         if plain:
             console.print(f"\n   Explanation: {plain}", style="yellow")
+        error_diag = result.get("error_diagnosis", "")
+        if error_diag:
+            console.print(error_diag, style="yellow")
 
     if diagnostics:
         console.print("\nDiagnostics:", style="bold")
@@ -150,6 +156,17 @@ def print_execution_result(result: dict, show_plot: bool = True):
     if show_plot and parsed and HAS_PLT:
         try:
             plot_result(parsed)
+            freq = parsed.get("frequency")
+            intent = result.get("intent")
+            if freq and intent and intent.molecule:
+                from ..core.spectrum_reference import (
+                    get_reference_spectrum, compare_with_reference, format_comparison_report,
+                )
+                ref = get_reference_spectrum(intent.molecule)
+                if ref and freq.frequencies:
+                    comparison = compare_with_reference(freq.frequencies, ref)
+                    console.print("\nIR 实验对照:", style="bold")
+                    console.print(format_comparison_report(comparison))
         except Exception as e:
             console.print(f"Warning: plot generation failed: {e}", style="dim")
 
@@ -161,22 +178,26 @@ def print_execution_result(result: dict, show_plot: bool = True):
 
 
 @click.group(invoke_without_command=True)
+@click.option("--classic", is_flag=True, help="Use classic FrankAgent instead of LangGraph")
 @click.pass_context
-def main(ctx):
+def main(ctx, classic):
+    ctx.ensure_object(dict)
+    ctx.obj["classic"] = classic
     if ctx.invoked_subcommand is None:
-        interactive_mode()
+        interactive_mode(classic=classic)
 
 
 @main.command()
 @click.argument("query", nargs=-1, type=str)
-def ask(query):
+@click.pass_context
+def ask(ctx, query):
     """Generate code only (no execution)."""
     if not query:
         console.print("Please provide a calculation request.", style="red")
         return
 
     text = " ".join(query)
-    agent = FrankAgent()
+    agent = create_agent(classic=ctx.obj.get("classic", False))
     result = agent.process_request(text)
     print_code_result(result)
 
@@ -188,7 +209,8 @@ def ask(query):
 @click.option("--timeout", "-t", default=600, help="Timeout in seconds")
 @click.option("--export", "-e", default=None, help="Export results to file")
 @click.option("--export-format", default="json", type=click.Choice(["json", "csv"]), help="Export format")
-def run(query, no_interpret, no_plot, timeout, export, export_format):
+@click.pass_context
+def run(ctx, query, no_interpret, no_plot, timeout, export, export_format):
     """Generate code and execute the calculation."""
     if not query:
         console.print("Please provide a calculation request.", style="red")
@@ -197,7 +219,7 @@ def run(query, no_interpret, no_plot, timeout, export, export_format):
     text = " ".join(query)
     console.print(f"\nExecuting calculation...", style="bold")
 
-    agent = FrankAgent(timeout=timeout)
+    agent = create_agent(timeout=timeout, classic=ctx.obj.get("classic", False))
     result = agent.run(text, interpret=not no_interpret)
 
     if result["code"]:
@@ -219,6 +241,128 @@ def run(query, no_interpret, no_plot, timeout, export, export_format):
         else:
             export_to_json(result, export)
             console.print(f"\nResults exported to {export} (JSON)", style="dim")
+
+
+def print_workflow_plan(plan):
+    """Display a planned multi-step workflow."""
+    console.print(f"\nWorkflow plan: {plan.title}", style="bold")
+    console.print(f"  Type: {plan.workflow_type}")
+    console.print(f"  Method: {plan.method} / {plan.basis}")
+    console.print(f"  Description: {plan.description}")
+    conf_color = "green" if plan.confidence > 0.7 else "yellow" if plan.confidence > 0.4 else "red"
+    console.print(f"  Confidence: {plan.confidence:.0%}", style=conf_color)
+
+    if plan.warnings:
+        for w in plan.warnings:
+            console.print(f"  Warning: {w}", style="yellow")
+
+    if plan.tasks:
+        console.print("\n  Steps:", style="bold")
+        table = Table(show_header=True, box=None, padding=(0, 2))
+        table.add_column("#", style="dim")
+        table.add_column("Agent", style="cyan")
+        table.add_column("Description")
+        for i, task in enumerate(plan.tasks, 1):
+            table.add_row(str(i), task.agent, task.description)
+        console.print(table)
+
+
+def print_autonomous_result(result: dict, agent=None):
+    """Display autonomous orchestration results."""
+    if result.get("awaiting_confirmation"):
+        plan = result.get("plan")
+        if plan:
+            print_workflow_plan(plan)
+        console.print(
+            "\nWorkflow paused — awaiting confirmation before execution.",
+            style="yellow",
+        )
+        if agent is not None and result.get("thread_id"):
+            if Confirm.ask("Execute this workflow?", default=True):
+                result = agent.resume(result["thread_id"], confirmed=True)
+            else:
+                console.print("Workflow cancelled.", style="dim")
+                return
+        else:
+            console.print(
+                f"Resume with thread_id={result.get('thread_id')} after confirmation.",
+                style="dim",
+            )
+            return
+
+    plan = result.get("plan")
+    if plan:
+        print_workflow_plan(plan)
+
+    for w in result.get("warnings", []):
+        console.print(f"Warning: {w}", style="yellow")
+
+    orch = result.get("result")
+    if orch and orch.summary:
+        console.print(orch.summary)
+    elif result.get("summary"):
+        console.print(result["summary"])
+
+    if result.get("success"):
+        console.print("\n[OK] Autonomous workflow completed.", style="green")
+    elif not result.get("fallback"):
+        console.print("\n[FAIL] Autonomous workflow did not complete successfully.", style="red")
+
+
+@main.command()
+@click.argument("query", nargs=-1, type=str)
+@click.pass_context
+def plan(ctx, query):
+    """Design a multi-step workflow without executing (Aitomia-style planner)."""
+    if not query:
+        console.print("Please provide a workflow description.", style="red")
+        return
+    text = " ".join(query)
+    agent = create_agent(classic=ctx.obj.get("classic", False))
+    wf_plan = agent.plan_workflow(text)
+    print_workflow_plan(wf_plan)
+    if not wf_plan.is_complex:
+        console.print(
+            "\nTip: This looks like a single-step calculation. Use 'frank ask' or 'frank run'.",
+            style="dim",
+        )
+    else:
+        console.print("\nTo execute: frank auto " + " ".join(query), style="dim")
+
+
+@main.command("auto")
+@click.argument("query", nargs=-1, type=str)
+@click.option("--timeout", "-t", default=600, help="Timeout in seconds")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt for complex workflows")
+@click.pass_context
+def auto_run(ctx, query, timeout, yes):
+    """Autonomously plan and execute a complex multi-step workflow."""
+    if not query:
+        console.print("Please provide a workflow description.", style="red")
+        return
+    text = " ".join(query)
+    console.print("\nPlanning and executing autonomous workflow...", style="bold")
+    agent = create_agent(timeout=timeout, classic=ctx.obj.get("classic", False))
+    result = agent.run_autonomous(
+        text,
+        require_confirmation=not yes,
+        confirmed=yes,
+    )
+    print_autonomous_result(result, agent=agent)
+
+
+@main.command()
+@click.argument("question", nargs=-1, type=str)
+@click.pass_context
+def explain(ctx, question):
+    """Answer computational chemistry questions using the knowledge base (RAG-lite)."""
+    if not question:
+        console.print("Please provide a question.", style="red")
+        return
+    text = " ".join(question)
+    agent = create_agent(classic=ctx.obj.get("classic", False))
+    answer = agent.explain(text)
+    console.print(Markdown(answer))
 
 
 WORKFLOW_ALIASES = {
@@ -248,14 +392,15 @@ WORKFLOW_TYPES = list(WORKFLOW_ALIASES.keys())
 @click.option("--timeout", "-t", default=600, help="Timeout in seconds")
 @click.option("--export", "-e", default=None, help="Export results to file")
 @click.option("--export-format", default="json", type=click.Choice(["json", "csv"]), help="Export format")
-def workflow(workflow_type, molecule, method, basis, methods, basis_sets,
+@click.pass_context
+def workflow(ctx, workflow_type, molecule, method, basis, methods, basis_sets,
              solvent, scan_type, atoms, n_points, range_start, range_end, timeout,
              export, export_format):
     """Run multi-step computational workflows."""
     canonical_type = WORKFLOW_ALIASES.get(workflow_type, workflow_type)
     console.print(f"\nRunning workflow: {canonical_type}...", style="bold")
 
-    agent = FrankAgent(timeout=timeout)
+    agent = create_agent(timeout=timeout, classic=ctx.obj.get("classic", False))
 
     kwargs = {}
     if methods:
@@ -679,7 +824,7 @@ def version():
     console.print("Code generation | Execution | Diagnostics | Interpretation")
 
 
-def interactive_mode():
+def interactive_mode(classic: bool = False):
     """Run the Frank interactive REPL with readline support and session state."""
     print_banner()
 
@@ -695,9 +840,11 @@ def interactive_mode():
 
     console.print("\nEnter a computational chemistry query. Type 'help' for usage, 'quit' to exit.")
     console.print("  Prefix with 'run' to execute; without prefix, generates code only.")
+    console.print("  Prefix with 'plan' to design workflows, 'auto' to run complex workflows.")
+    console.print("  Prefix with 'explain' to ask method/workflow questions.")
     console.print("  Prefix with 'search <name>' to query PubChem, 'import <file>' to load XYZ.\n")
 
-    agent = FrankAgent()
+    agent = create_agent(classic=classic)
 
     while True:
         try:
@@ -743,6 +890,22 @@ def interactive_mode():
 
             if text.lower().startswith("batch "):
                 _handle_inline_batch(agent, text[6:].strip())
+                continue
+
+            if text.lower().startswith("plan "):
+                wf_plan = agent.plan_workflow(text[5:].strip())
+                print_workflow_plan(wf_plan)
+                continue
+
+            if text.lower().startswith("auto "):
+                console.print("\nExecuting autonomous workflow...", style="bold")
+                result = agent.run_autonomous(text[5:].strip())
+                print_autonomous_result(result, agent=agent)
+                continue
+
+            if text.lower().startswith("explain "):
+                answer = agent.explain(text[8:].strip())
+                console.print(Markdown(answer))
                 continue
 
             if text.lower().startswith("run "):
@@ -824,6 +987,9 @@ def _print_onboarding():
     console.print("  import <file>     Load XYZ file")
     console.print("  compare <mol> <methods>  Parallel method comparison")
     console.print("  converge <mol> <basis_sets>  Basis set convergence test")
+    console.print("  plan <query>      Design multi-step workflow (no execution)")
+    console.print("  auto <query>      Autonomously plan and execute complex workflow")
+    console.print("  explain <question>  Query method/workflow knowledge")
     console.print("  help              Show full help")
     console.print("  session           Display current session state")
     console.print("  quit              Exit")

@@ -67,3 +67,27 @@ def get_model_name() -> str:
     """Return the configured LLM model name."""
     config = _load_config_json()
     return config.get("deepseek_model", "deepseek-chat")
+
+
+def get_runs_dir() -> str:
+    """Return the directory for persistent calculation runs."""
+    config = _load_config_json()
+    default = os.path.join(_get_config_dir(), "runs")
+    path = config.get("runs_dir", default)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def get_save_runs() -> bool:
+    """Whether to persist calculation runs to disk (Aitomia-style)."""
+    config = _load_config_json()
+    return config.get("save_runs", True)
+
+
+def set_save_runs(enabled: bool) -> None:
+    """Enable or disable persistent run directories."""
+    config_path = os.path.join(_get_config_dir(), "config.json")
+    config = _load_config_json()
+    config["save_runs"] = enabled
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)

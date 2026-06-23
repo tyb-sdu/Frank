@@ -1,0 +1,1403 @@
+Aitomia: An Agentic Framework for AI-Driven Atomistic and
+Quantum Chemical Simulations
+Jinming Hu,
+#
+Hassan Nawaz,
+#
+Yi-Fan Hou,
+#
+Lijie Chi, Xin-Yu Tong, Yuting Rui, Yuxinxin Chen,*
+Arif Ullah,* and Pavlo O. Dral*
+Cite This: https://doi.org/10.1021/acs.jctc.6c00591
+ Read Online
+ACCESS
+Metrics & More
+ Article Recommendations
+ABSTRACT: We present Aitomia, an agentic framework for AI-
+driven atomistic and quantum chemical (QC) simulations that
+helps experts and nonexperts alike set up and run calculations,
+analyze results, and summarize them in textual and graphical forms
+through natural language interaction. Built on the MLatom
+software ecosystem, Aitomia supports AI-driven atomistic simu-
+lations as well as conventional quantum-chemical calculations,
+including density functional theory, semiempirical methods such as
+GFN2-xTB, and selected high-level wave function-based methods,
+through interfaces to widely used programs such as Gaussian,
+ORCA, PySCF, and xtb, covering tasks from ground- and excited-state calculations to geometry optimization, thermochemistry, and
+spectra simulations. By autonomously executing computational workflows, Aitomia can deliver infrared spectra in seconds and
+reaction thermochemistry in minutes, with results close to experiment or high-level theoretical references while greatly reducing the
+manual effort required from users. Aitomia lowers the barrier to performing atomistic simulations, thereby democratizing simulations
+and accelerating research and development in the relevant fields.
+■
+INTRODUCTION
+Computational chemistry has played a transformative role in
+advancing chemical research over the past decades, enabling
+spectra simulations and interpretation, the elucidation of
+reaction mechanisms, and the generation of training data sets
+for artificial intelligence (AI)-assisted design and discovery.
+1−5
+The backbone of such atomistic simulations is quantum
+chemistry (QC) based on first-principles, solving the
+Schro ̈ dinger equation by employing numerous approximate
+methods that balance speed and accuracy. AI/machine learning
+(ML) methods are also increasingly used for AI-driven
+atomistic simulations. However, the growing sophistication of
+computational chemistry tools presents significant challenges
+for researchers.
+Proficiency with these tools requires not only familiarity with
+complex underlying theories and package-specific options but
+also skills in Linux and access to high-performance computing
+(HPC) resources. Moreover, simulating realistic chemical
+processes often necessitates the integration of multiple
+computational packages, compounding the complexity for
+users across the chemical sciences. Despite progress in
+automating computational workflows,
+6−9
+two critical barriers
+remain. First, users must manually configure crucial simulation
+parameters, often requiring consultation of extensive and
+technical user manuals. Second, many workflows depend on
+HPC resources, which are not readily available to non-
+computational researchers, including experimental chemists
+and students.
+Some of the aforementioned issues are alleviated with
+graphical user interfaces (GUIs) designed for the specific
+software packages. For example, a popular Gaussian program
+10
+for QC calculations includes GaussView as its official GUI,
+which facilitates the creation of input files and the analysis of
+calculation results. Many other packages, such as Materials
+Studio and ADF,
+11
+were built to provide seamless experiences
+for computing job preparation, performing, and analyzing the
+computations. Unfortunately, GUIs do not fully solve the
+above problems, as researchers may still need to learn the
+GUI’s options in addition to those of the underlying software,
+submit jobs to HPC clusters, and seek expert advice.
+Another useful solution lies in the growing number of web-
+based platforms that provide simplified ways to submit and run
+calculations, often with web GUIs; examples include
+TeraChem
+12
+and ChemCompute.
+13
+We are also involved in
+the development of similar platforms, Aitomistic Hub
+14
+and
+Received: March 25, 2026
+Revised: June 9, 2026
+Accepted: June 9, 2026
+Articlepubs.acs.org/JCTC
+© XXXX American Chemical Society
+A
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+Downloaded via SHANDONG UNIV on June 23, 2026 at 01:37:27 (UTC).
+See https://pubs.acs.org/sharingguidelines for options on how to legitimately share published articles.
+
+Aitomistic Lab@XMU
+15
+(successor to the Xiamen Atomistic
+Computing Suite,
+16
+XACS), which enable QC- and AI-driven
+atomistic calculations on HPC clusters via a web browser. An
+interesting platform is Chemvox,
+17
+which enables researchers
+to run calculations using AI-powered speech recognition,
+allowing them to perform basic calculations via voice
+commands. Another attempt to bring QC calculations to
+general users, including students, is the mobile app MoleculAR,
+which converts 2D handwritten structures into 3D visual-
+izations to improve understanding of molecular structures.
+18
+The platforms mentioned above often provide free HPC
+resources for basic use, such as education, and are convenient
+options for performing QC and ML simulations; however,
+users still need to understand the software’s background and
+the supported theoretical methods. These Web site platforms
+also provide limited support for interpreting and analyzing the
+results.
+With the success of large language models (LLMs) such as
+the GPT series
+19−21
+from OpenAI and Qwen,
+22
+it is natural to
+ask whether LLMs can provide an ultimate solution for making
+QC- and ML-driven atomistic simulations accessible to a wider
+research community. Many studies have been combining
+LLMs with professional chemistry-related fields in recent
+years,
+23−26
+and, unsurprisingly, this trend also extends to
+atomistic simulations. One recent noteworthy attempt is the
+AutoSolvateWeb platform
+27
+for submitting jobs to simulate
+explicitly solvated molecules. This platform uses an AI agent
+that guides the user in selecting calculation parameters and
+provides explanations for basic queries; however, it is limited to
+submitting jobs to specific cloud computing services and
+provides neither analysis of the results nor any technical
+discussion of the calculations. This approach resembles a rule-
+based method to guide the users with rather limited
+explanations. The feasibility of using LLMs for autonomous
+simulations, from the design of calculations to the reporting of
+results and analyses, has been demonstrated in polymer
+research.
+28
+LLM assistant MDcrow was recently developed
+to automate molecular dynamics (MD) simulations.
+29
+A more
+general multiagent system, El Agente, is powered by LLMs to
+generate and execute complex workflows, e.g., involving several
+ground-state single-point energy calculations, geometry opti-
+mizations, and frequency analysis using density functional
+theory (DFT) and semiempirical quantum-mechanical (QM)
+methods.
+30
+Efforts toward LLM-powered autonomous simu-
+lations are gaining momentum, as evidenced by the fact that
+the above works appeared online within five months, and the
+latter independent preprint on El Agente is dated a few days
+before the first version
+31
+of the preprint of this work.
+While the above research shows major advances in LLM-
+accelerated automation in the QC field, at the time of writing,
+there had been no integrated, all-in-one agentic framework for
+both AI/ML and QC simulations supporting a broad range of
+typical tasks, from ground- and excited-state single-point
+calculations to geometry optimizations and spectral simula-
+tions. Consequently, there is a pressing need for an accessible
+framework that reduces technical and computational barriers,
+enabling a wider audience to effectively leverage the computa-
+tional chemistry tools.
+Here, we present Aitomia�an agentic framework for AI-
+driven atomistic and QC simulations (Figure 1). This
+framework features chatbots that communicate with users in
+natural language. The chatbots assist researchers at all stages,
+from setting up calculations and providing possible options to
+automatically performing simulations and analyzing their
+results in a clear, reusable format. Aitomia is leveraging the
+MLatom ecosystem
+9
+that supports a wide array of AI-driven
+atomistic and QC methods, as well as interfaces to various
+powerful electronic-structure and ML programs such as
+PySCF, Gaussian, ORCA, xtb, TorchANI, etc., enabling
+essential computations such as energy calculations, geometry
+optimizations, thermochemistry, reaction, and spectra simu-
+lations. This framework enables experts and nonexperts alike,
+Figure 1. Overview of the Aitomia framework in AI-driven and QC atomistic simulations, with a chatbot interacting with the user, integrating the
+MLatom package for performing AI-enhanced computational chemistry calculations on HPC clusters, and providing final calculation results.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+B
+
+including experimental researchers, educators, and students, to
+utilize advanced computational chemistry tools, expanding
+their accessibility and applicability and ultimately accelerating
+advances in fields such as drug and materials design.
+■
+RESULTS AND DISCUSSION
+The Scope of Atomistic Simulations
+Our goal is to design an intelligent assistant capable of
+performing most key computational chemistry tasks using a
+wide variety of state-of-the-art AI atomistic models and
+conventional QC methods. This is an ambitious goal that
+presents a formidable challenge, as it requires supporting many
+different software packages and theoretical methods, both QC-
+and AI-driven. Luckily, we can leverage the existing MLatom
+software ecosystem,
+9
+which is particularly well-suited to this
+goal because it seamlessly supports both QC and AI-driven
+atomistic simulations. Hence, our intelligent assistant, Aitomia,
+achieves its goal by leveraging MLatom’s comprehensive
+feature set. The current capabilities of Aitomia are summarized
+in Figure 2.
+Currently, Aitomia can perform tasks such as single-point
+calculations, geometry optimizations, frequency and thermo-
+chemistry calculations, and simulations of infrared (IR) and
+UV/vis spectra. For this, it leverages many state-of-the-art
+pretrained universal ML models, such as the AIQM,
+32−35
+ANI,
+36−39
+OMNI-P,
+40,41
+and AIMNet
+42
+series. Some of these
+models, such as the AIQM series and ANI-1ccx, approach the
+coupled-cluster accuracy at a fraction of the computational cost
+of DFT for many tasks. OMNI-P2x
+41
+is a unique universal
+potential for excited-state calculations, furnishing UV/vis
+absorption spectra with accuracy approaching that of TD-
+DFT. Aitomia can also combine the single tasks into more
+complex workflows, such as the calculation of the reaction
+enthalpies, as we will discuss separately. The framework can be
+further extended to other tasks supported by MLatom, e.g.,
+MD, training, evaluating, and using custom ML models,
+building data sets with active learning, and fine-tuning the
+universal ML models for user-specific tasks.
+Aitomia as an Assistant for Performing Standard
+Computational Tasks
+Typically, performing single computational tasks, such as
+geometry optimizations or frequency calculations, requires
+users to be familiar with the corresponding software input
+formats and options. Learning them is a labor-intensive
+process, impeding the widespread adoption of various software
+and new techniques. To overcome this barrier, we have built
+AI agents for Aitomia, which invoke LLMs to interact with the
+user, choose an appropriate computational task requested by
+the user, submit the computing job to the HPC server, retrieve
+the output, analyze it, and report the results back to the user in
+text and graphical format. Additionally, we implemented
+quality-of-life features that enable Aitomia to retrieve
+molecular structures from user-provided chemical names.
+With Aitomia’s assistance, AI-driven atomistic and QC
+calculations can be executed and analyzed autonomously,
+with the input and output files and scripts organized in a clear
+directory structure for the user’s review and results retrieval.
+We show an example in Figure 3. The user interacts with
+Aitomia and requests the structure of the hexanol molecule,
+which Aitomia returns, allowing the user to analyze it (Figure
+3A). Later, the user requests IR spectra calculations for this
+molecule, and Aitomia calculates them using the AIQM2
+method
+35
+(Figure 3B). The calculations finish in seconds, and
+the resulting spectrum is very close to the experimental
+spectrum retrieved from the NIST Web site
+43
+(Figure 3c).
+Importantly, calculations of similar quality would take much
+longer with DFT, whereas analogous spectra simulations with
+semiempirical QM methods would not be as accurate.
+44
+Interactions can be performed in many other languages such as
+English, Chinese, and Ukrainian, which we tested.
+We note that Aitomia prefers using the AIQM methods
+(e.g., the choice of AIQM2 in the above IR calculation)
+Figure 2. Aitomia can perform a wide range of computational chemistry tasks using both AI/ML atomistic models and conventional quantum-
+chemical methods, including DFT, semiempirical approaches such as GFN2-xTB, and selected higher-level wave function-based calculations
+accessed through MLatom interfaces to external programs such as Gaussian, ORCA, PySCF, and xtb. The figure shows the single-task agents
+implemented in Aitomia, e.g., for geometry optimizations and thermochemistry, which can be combined into more complex workflows, such as
+reaction enthalpy calculations. A selection of the potential future agents is also shown. Adapted from ref 9. Available under a CC-BY 4.0 license.
+Copyright 2024 Dral, P. O.; Ge, F.; Hou, Y.-F.; Zheng, P.; Chen, Y.; Barbatti, M.; Isayev, O.; Wang, C.; Xue, B.-X.; Pinheiro Jr, M.; Su, Y.; Dai, Y.;
+Chen, Y.; Zhang, S.; Zhang, L.; Ullah, A.; Zhang, Q.; Ou, Y.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+C
+
+Figure 3. An example of performing IR spectra calculations with Aitomia, guiding the user through (a) structure generation, (b) calculations, and
+(c) results. The screenshots illustrate one representative user interface. The experimental spectrum is a screenshot from the NIST Web site.
+43
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+D
+
+because they are among a few methods that allow fast,
+accurate, and robust simulations for a broad range of systems,
+while other approaches such as DFT are often too slow, or too
+inaccurate (e.g., semiempirical methods such as GFN2-xTB
+and others, which are less accurate than AIQM series
+according to numerous benchmarks),
+32−35,45,46
+or not robust
+and transferable enough (e.g., more recent universal machine
+learning potentials which often break down in uncommon
+situations).
+45
+Hence, Aitomia simplifies general, frequently used computa-
+tional chemistry tasks by allowing users to perform them via
+natural language chat, eliminating the need to manually learn
+and write input files for various software packages. However,
+the researchers often need to perform multiple such
+Figure 4. Architecture of multiagent Aitomia enabling complex computational workflows.
+Figure 5. Use of Aitomia’s multiagent implementation for the autonomous calculation of reaction energy and thermodynamic properties for the
+Diels−Alder reaction between cyclopentadiene and maleimide.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+E
+
+computations, e.g., to calculate reaction and isomerization
+energies, binding energies, electron affinities, and related
+quantities. This necessitates the development of a more
+autonomous assistant capable of handling such complex
+workflows.
+Design of Autonomous Workflow and Execution with
+Multiagent Aitomia
+Beyond simplifying typical single computational tasks, the goal
+of Aitomia is to assist in performing full computational
+workflows comprising multiple tasks. We enable these
+workflows via an autonomous, multiagent extension of
+Aitomia. It is capable of designing workflows and executing
+them with a minimal manual intervention.
+First, the multiagent system evaluates the user’s intent to
+determine whether a computational task is required. If
+computation is needed, the system validates the relevant
+computational parameters and, under the LangGraph-based
+orchestration layer’s control, activates the executor agent. The
+executor agent initializes the working directory, stores the user-
+provided initial molecular structure (if available), constructs
+the overall computational workflow, and dispatches subtasks to
+subordinate agents.
+Each subagent acquires the necessary contextual informa-
+tion, including the working directory. If the user does not
+provide an initial molecular structure, the subagent invokes a
+structure-retrieval agent to obtain the required molecular
+geometry. Within the structure retrieval agent, the molecular
+species required for the current task are first identified. The
+agent then determines whether the corresponding structure
+should be retrieved from external sources or reused from
+previously generated results. For external retrieval, the
+molecule name is first used to query PubChem
+47
+via the
+PUG REST API for a 3D conformer. If PubChem does not
+return a structure, the name is resolved to a SMILES string via
+the NIH Cactus Chemical Identifier Resolver,
+48
+and an initial
+3D geometry is generated using RDKit
+49
+with ETKDG
+conformer embedding and MMFF94 optimization. The
+retrieved structure is then validated to ensure its chemical
+plausibility by comparing its atom count to the expected count
+from the molecular formula. If a mismatch is detected, then the
+user is prompted to inspect the structure before the calculation
+proceeds. The validated structure is then returned to the
+calling subagent.
+For subagents responsible for simpler tasks, they directly call
+MLatom-based scripts to perform the required calculations. In
+contrast, subagents handling more complex tasks further refine
+the computational workflow and may invoke additional
+specialized agents to decompose the task and execute specific
+components.
+After completing all assigned computations, each subagent
+performs local result analysis and returns the processed outputs
+to the executor agent. Once all subagent responses are
+collected, the executor agent conducts an integrated analysis,
+summarizes the key outcomes of the computation, records the
+essential information in the system state, and terminates the
+current computational workflow. The entire process concludes
+with a report to the user summarizing either the results or the
+encountered errors.
+We will use the reaction energy for the Diels−Alder reaction
+of cyclopentadiene and maleimide as a demonstration of the
+application of the multiagent Aitomia. We only present the
+main points of the chat between the user and Aitomia in Figure
+5; complete model answers and other examples are provided in
+the associated data (see the Data Availability section). In this
+example, Aitomia completes the task in under 7 min and,
+overall, calls single-task agents 12 times. The final reaction
+energy of −33.7 kcal/mol is rather close to the best theoretical
+estimate of ΔE = −34.2 kcal/mol in the GMTKN55
+database,
+50
+due to the use of an accurate AIQM2 method,
+which is orders of magnitude faster than DFT. Aitomia also
+provides other thermochemical properties for this reaction, i.e.,
+enthalpy and Gibbs free energy changes. For this reaction, the
+stoichiometric coefficients are automatically determined from
+the atom-conservation matrix of the optimized reactant and
+product structures via null-space analysis, ensuring mass-
+balanced reaction thermodynamics.
+We provide additional examples in the associated data
+(Examples F−T, Pages S7−S86, see the Data Availability
+section), which, taken together, demonstrate Aitomia’s ability
+to handle complex workflows.
+We note that the multiagent system, e.g., the use of
+multiagent Aitomia, requires extensive LLM-based reasoning
+and, hence, is slower and more resource-intensive than using
+Aitomia for single-task computations. Also, the autonomous
+use of Aitomia for increasingly complex workflows is more
+prone to occasional hallucinations and mistakes. To mitigate
+the risk of arithmetic errors, Aitomia’s calculation agents
+deterministically precompute energy differences in both
+hartree and kcal/mol before passing the results to the LLM.
+For example, reaction energies are reported in both units
+directly by the calculation agent, so the LLM does not perform
+the conversion itself. Absolute single-point energies are
+reported in hartree only, as their values in kcal/mol are
+physically meaningless. In general, the user is advised to
+critically evaluate the responses from the multiagent Aitomia.
+More benchmarks are provided next.
+Benchmark on Atomistic Simulation Tasks
+A major challenge for Aitomia is correctly interpreting user
+queries, determining which information is missing and which
+calculations are required, and finally organizing the corre-
+sponding computational procedures to obtain reliable results.
+Thus, we conducted a systematic benchmark of Aitomia on a
+set of representative theoretical chemistry tasks, assigning each
+task a difficulty level based on the degree of autonomy required
+to answer the given questions. The full overview of the tasks is
+provided in the associated data (the benchmark spreadsheet;
+see Data Availability). Tasks with low autonomy typically
+provide clear instructions regarding the type of calculations
+needed and involve relatively simple execution with minimal
+orchestration. Medium-level autonomy tasks require a higher
+level of routing to organize multiple computational steps, but
+still contain explicit instructions describing the necessary
+procedures. In terms of high-level autonomy, little information
+is provided to decide which tasks to perform, and the queries
+are much closer to what we as computational chemists face
+every day. It requires a deep understanding of the user’s
+questions and the correct calculation procedure to obtain the
+results. We used low and part of medium-level autonomy to
+develop Aitomia; hence, they are marked “seen” in the
+associated data’s benchmark spreadsheet, while all the others
+were not seen by developers and are marked accordingly.
+A task is considered successfully completed if it terminates
+normally and the deviation between the results generated by
+Aitomia and those obtained from manual calculations is
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+F
+
+Table 1. Classification of Benchmark Tasks and Representative Examples across Different Levels of Difficulty
+level of
+autonomy description examples
+number
+of
+examples
+avg.
+success
+rate
+low clear instructions regarding the type of calculations are
+provided in query with simple execution of minimal
+orchestration
+calculate ground-state energy and gradients for acetone molecule using AIQM2 27 99.6%
+perform geometry optimization for p-xylene using AIQM1 method, use geometric as the optimization program
+calculate the IR spectrum for acetonitrile using the AIQM2 method, use geometric for optimization and PySCF for IR
+calculation
+calculate the UV−vis spectrum for naphthalene using the semiempirical method OM2 and do optimization using AIQM2
+first, set bandwidth to 0.4 and contribution threshold to 0.05
+medium hints to type of tasks are given in the question. Questions have
+to be answered according to computational results
+investigate how conjugation length affects UV absorption by comparing ethene, butadiene, and hexatriene. Analyze the red
+shift trend
+11 70.9%
+which tautomer of acetaldehyde (keto vs enol) is more stable in the gas phase? Compare their thermodynamic properties and
+IR spectra
+calculate the reaction energy and thermochemistry properties of Claisen condensation of two ethyl acetate using the AIQM2
+method
+calculate the proton affinity of ammonia (NH
+3
+) using wB97X/Def2-SVP
+high the general chemical questions that require comprehension of
+the context and perform required calculations to get the
+answer
+Does 2-methoxytetrahydropyran obey classical steric expectations, or is its conformational equilibrium dominated by
+stereoelectronic effects?
+9 45.6%
+compare the UV absorption spectra of benzene and aniline to analyze the effect of amino substitution on electronic
+transitions
+compare the intramolecularly hydrogen-bonded and non-hydrogen-bonded conformers of salicylic acid in the gas phase.
+Determine their relative thermodynamic stability and analyze how hydrogen bonding influences the O−H stretching
+frequency and IR intensity
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+G
+
+sufficiently small. Specifically, for tasks requiring a precise
+numerical answer, the energy deviation must be less than 10
+−6
+hartree, and deviations for other properties (geometries,
+frequencies, etc.) must be below 10
+−4
+. In addition, the final
+analysis provided by the system must reasonably address the
+user’s query and avoid significant chemical inaccuracies, which
+we also assess. To assess robustness and reproducibility, each
+benchmark task was independently executed 10 times under
+identical settings. The results demonstrate consistent perform-
+ance across repeated trials, indicating stable agent orchestra-
+tion and reliable task execution. The specific task types,
+representative examples for each category, and the correspond-
+ing benchmark results are summarized in Table 1. The full task
+descriptions, their corresponding abbreviations, and the
+success rates across independent runs are provided in the
+spreadsheet supplied as associated data (see the Data
+Availability section). The benchmark results reflect only its
+performance using versions from January to February 2026.
+We note that, because the underlying quantum-chemical
+calculations are deterministic, a successful optimization yields
+the same geometry regardless of the trial run; the RMSD of
+optimized structures across repeated trials is therefore
+effectively zero. Any trial-to-trial variability in outcomes arises
+solely from nondeterministic LLM decision-making, such as
+selecting different quantum-chemistry engines (e.g., Gaussian
+or PySCF), methods, or parameters across runs, or from the
+structure-retrieval source changing when an external service is
+intermittently unavailable and an alternative service returns a
+different initial geometry.
+It should be noted that, although challenging tasks
+demonstrate increased flexibility, they are fundamentally
+composed of basic agents. Consequently, complex tasks that
+rely on fundamental computational capabilities not supported
+by the benchmarked version of Aitomia�such as pK
+a
+calculations or solvation free energy evaluations that require
+unimplemented capabilities of the base agents�were beyond
+its scope.
+In general, Aitomia achieves excellent stability on low-
+difficulty tasks with a success rate approaching 100%. This
+provides a solid foundation for more complex tasks composed
+of these basic operations. For medium difficulty tasks, which
+involve more complex workflows but still provide explicit
+instructions, Aitomia achieves a success rate of 70.9%. In
+contrast, the performance on high-difficulty tasks dropped to
+45.6%. An examination of failed or partially successful cases
+indicates that several systematic factors contribute to the
+performance degradation.
+One important factor is the absence of an automated self-
+correction mechanism in the current implementation. The
+present framework follows a relatively straightforward
+execution pipeline in which intermediate computational results
+are not actively validated. Consequently, errors introduced in
+earlier stages can propagate to the final output. For example, if
+a geometry optimization yields a structure with imaginary
+frequencies, the workflow proceeds without triggering
+reoptimization or structural correction, thereby compromising
+the reliability of subsequent thermodynamic or vibrational
+analyses. This behavior can be observed in several benchmark
+cases (e.g., MED.EWG and HIGH.Gas.Vibrational; see the
+benchmarks in the associated data spreadsheet for definitions
+and prompts). Notably, inspection of the generated reasoning
+indicates that the system often identifies the underlying source
+of the error in its final analysis. This observation indicates that
+integrating a self-correction module capable of diagnosing
+common computational issues and invoking specialized
+correction agents (e.g., imaginary-frequency removal or
+workflow redesign) could substantially improve the system’s
+robustness.
+A second source of error arises from the molecular retrieval
+stage, where the system occasionally fails to distinguish
+between isomeric and identical structures correctly. When
+the user-provided molecular description is ambiguous, the
+system may incorrectly interpret identical species as different
+isomers or, conversely, confuse distinct isomers as the same
+structure. This issue is particularly evident in cases such as
+HIGH.StericVsStereoelectronic. Even when the molecular
+identity is described relatively clearly, occasional misassign-
+ments still occur (e.g., MED.AxPref.StereoElec), suggesting
+that the current molecular identification procedure lacks
+sufficiently rigorous structural validation. In addition, this
+problem affects cases involving different conformational states
+of the same molecule (e.g., HIGH.CONF.HB-vs-nHB). When
+the user does not explicitly provide a molecular structure, the
+system retrieves molecules from a database based primarily on
+the molecular name. However, such name-based retrieval
+typically returns only a single reference geometry and does not
+account for alternative conformations. Consequently, when
+tasks require comparing structurally distinct conformers�such
+as intramolecularly hydrogen-bonded versus non-hydrogen-
+bonded conformers�the system may inadvertently use the
+same retrieved structure for both calculations. This results in
+identical optimized geometries and energies, precluding a
+meaningful comparison. To address this limitation, we plan to
+implement a more rigorous validation scheme comprising two
+components: a graph-isomorphism check, in which the
+molecular graph derived from the retrieved 3D structure (via
+RDKit) is compared against the expected molecular graph to
+verify bond connectivity and atom types; and a stereochemistry
+verification, in which the 3D geometry is checked for
+consistency with the expected chirality and double-bond
+stereochemistry (e.g., using Cahn−Ingold−Prelog (CIP)
+rules).
+In several benchmark tasks, the QC calculations themselves
+complete successfully, yet inaccuracies appear in the AI-
+generated chemical interpretation. These issues mainly arise in
+the post-analysis stage and typically involve minor errors in
+spectral assignments or mechanistic interpretation. For
+instance, in one of the benchmark runs (RUN7) of the
+HIGH.AminoSubstitution test case, small inaccuracies appear
+in the assignment of spectral features, while in the RUN10 of
+the same test, the electronic transition assignments for benzene
+were reversed. Although these issues do not affect the
+underlying numerical calculations, they reduce the reliability
+of the generated chemical explanations.
+Another issue arises when the reaction equation is not
+explicitly specified by the user. In some cases (e.g.,
+MED.ΔGdeprot), the LLM may infer an incomplete reaction
+scheme, such as omitting the H
++
+species in deprotonation
+calculations.
+Finally, a small number of failures are attributable to
+infrastructure-related issues such as instability of the LLM
+service or unexpected server interruptions during task
+execution. While these factors are external to the computa-
+tional framework itself, their impact could be mitigated
+through simple fault-tolerant mechanisms, such as automatic
+task retry.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+H
+
+Taken together, these results suggest that Aitomia performs
+robustly on well-defined computational chemistry tasks, while
+its performance decreases in scenarios involving ambiguous
+problem definitions, complex workflows, or automatic reaction
+inference. The benchmark analysis highlights several promising
+directions for future development including incorporating
+automated self-correction mechanisms, improving molecular
+validation procedures, and adopting more robust reasoning
+strategies.
+Aitomia Serves as a Look-Up Tool for Atomistic
+Calculations
+Even with a powerful, intelligent assistant at hand, to ensure
+scientifically reliable results, users themselves must have
+background knowledge of simulations, how they are
+performed, and which QC methods or AI models are
+appropriate for the task. Before the rise of LLMs, the only
+ways were either learning from manuals and tutorials or from
+human teachers. This severely limits the speed of knowledge
+acquisition, which might also be limited to access. It is also
+inconvenient to look up the information when needed in
+lengthy manuals.
+The challenge here is to create an LLM-driven lookup tool
+that provides reliable information based on the domain
+knowledge about the underlying MLatom capabilities exploited
+by Aitomia. We solve this challenge by exploiting the Retrieval-
+Augmented Generation (RAG) technique to improve the
+LLM’s robustness by providing access to external knowledge
+(MLatom documentation), thereby reducing hallucinations
+and enhancing factual accuracy.
+Aitomia, with access to the RAG database, provides a useful
+chatbot expert in atomistic simulations that can assist
+nonexperts in providing background information on available
+computational approaches. Here, we show an example of
+asking Aitomia about the difference between two MLatom
+computational methods (Figure 6).
+In the example, Aitomia has been asked, “What is the
+difference between AIQM1 and AIQM2 in MLatom?” Aitomia
+satisfactorily answered this question using RAG across various
+aspects, including accuracy, speed, and applicability. The
+information is mostly correct except for the supported element
+of AIQM2, which is explicitly stated in the MLatom
+documentation. In contrast, Aitomia without RAG provided
+Figure 6. Aitomia can provide nonexperts with background information on the framework’s underlying methods. Here is an example showing
+Aitomia’s response to an MLatom-related question with and without RAG.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+I
+
+no information on AIQM2 because the LLM used only had
+knowledge as of 2024 June.
+Overall, RAG enables Aitomia to answer questions in niche
+fields and can also support a teaching-oriented use in
+computational chemistry.
+Limitations
+Despite Aitomia’s demonstrated flexibility, the presented
+capabilities are inherently constrained by the scope of the
+integrated fundamental functional agents. At this stage,
+Aitomia primarily focuses on establishing a robust foundation
+for complex AI-driven atomistic and QC workflows, rather
+than exhaustively covering all possible simulation tasks.
+Aitomia operates by decomposing complex scientific
+problems into sets of basic computational tasks. For example,
+reaction enthalpy calculations are automatically formulated as
+combinations of geometry optimization and frequency
+calculations for multiple molecular systems with the overall
+task structure orchestrated by LLMs. While this design offers a
+high degree of generality and adaptability, the range of
+problems that it can address is limited by the availability,
+maturity, and reliability of these basic task modules.
+Furthermore, the implementation supports only a limited set
+of molecular input formats, primarily the XYZ and JSON
+representations. This restriction limits interoperability with
+existing simulation pipelines and user workflows, particularly
+when alternative or more-specialized file formats are required.
+Additionally, the integration of RAG primarily focuses on
+answering MLatom-related queries, whereas the calculation
+agents underutilize it.
+A further group of limitations stem from how Aitomia
+obtains and validates the molecular structures used in
+calculations. The current version does not perform systematic
+conformational sampling: calculations start from a single 3D
+structure, either retrieved from PubChem or generated from a
+SMILES, which may not correspond to the global minimum.
+The same retrieval pipeline cannot yet produce chemically
+valid geometries for coordination complexes or organometallic
+compounds since standard databases and SMILES-based
+generators do not handle these species, and the system lacks
+specialized coordination-site assignment logic. Stereochemistry
+is likewise handled only partially: explicit stereochemical
+validation and enantiomer selection are not performed, so
+that for an ambiguous query, the system silently adopts
+whatever stereoisomer the database returns, and when the
+PubChem lookup fails, and the RDKit fallback is triggered, the
+NIH Cactus resolver may strip stereochemical information
+from the SMILES before 3D-geometry generation, yielding an
+arbitrary stereoisomer.
+Outlook
+The limitations and benchmark analysis presented above,
+together with broader trends in agentic AI, point to several
+directions in which Aitomia can be strengthened (Figure 7).
+An important direction is the introduction of self-correcting
+mechanisms. The benchmark analysis shows that a substantial
+fraction of errors in the current implementation stem from the
+lack of automated error detection and recovery. In practice,
+many failures arise from common issues in the computational
+chemistry workflows. For example, geometry optimizations
+may converge to saddle points rather than true minima, as
+indicated by the presence of imaginary frequencies in the
+subsequent frequency calculations. In such cases, a self-
+correction mechanism could automatically trigger additional
+optimization steps, adjust computational methods or opti-
+mizers, or regenerate improved initial guesses to obtain
+physically meaningful structures. The modular, graph-based
+architecture of Aitomia lends itself to integrating such
+validation nodes without restructuring the overall workflow.
+By enabling automatic validation of intermediate results and
+adaptive recovery from both computational and system level
+errors, self-correction mechanisms would substantially improve
+the stability, robustness, and reliability of autonomous
+computational workflows.
+A further set of improvements targets the robustness of the
+molecular input handling and validation. Planned additions
+include automated conformer search and lowest-energy
+conformer selection (e.g., via RDKit conformer enumeration
+or CREST/GFN2-xTB); extended support for retrieving and
+constructing chemically valid 3D structures of coordination
+complexes and organometallic compounds, together with
+dedicated coordination-chemistry reasoning; and CIP-based
+stereochemical verification and explicit enantiomer selection,
+in particular for ambiguous queries and for cases where the
+structure retrieval fallback would otherwise discard chirality.
+The scope of Aitomia can be broadened by expanding the
+set of fundamental task agents to cover additional capabilities
+supported by MLatom, such as MD simulations, custom ML
+model training, active learning, and fine-tuning of universal ML
+potentials. Broader support for molecular input formats would
+further improve interoperability with existing simulation
+pipelines. Because these capabilities are already available in
+the underlying MLatom ecosystem, the primary effort lies in
+designing reliable agent wrappers and appropriate default
+parameters for each task type.
+The relationship between Aitomia and MLatom is inherently
+synergistic: the extensibility of MLatom enables continuous
+expansion of Aitomia’s functionality, while the demands of
+Aitomia provide practical motivation for advancing MLatom�
+for instance, toward incorporating solvation effects and
+developing machine-learning models for solvated systems.
+Figure 7. Aitomia development outlook.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+J
+
+Deeper integration of RAG into the task agents themselves,
+beyond the current lookup chatbot, could allow Aitomia to
+draw on external databases, scientific literature, and user-
+shared results when making computational decisions. This
+would improve both the quality of post-analysis chemical
+reasoning and the selection of appropriate computational
+parameters.
+More broadly, advances in agentic workflow design open the
+possibility of increasingly autonomous execution of complex,
+multistep tasks. In the longer term, one can envision a closed-
+loop framework in which an agentic system like Aitomia
+automatically collects computational and experimental data,
+trains machine learning models, and iteratively refines them.
+When combined with experimental automation platforms, such
+an approach could enable continuous feedback among
+simulation, experimentation, and model improvement, enhanc-
+ing both the performance of the workflows and the accuracy of
+the underlying models over time. As the underlying language
+models continue to improve in reasoning ability and domain
+knowledge, agentic frameworks will inherit these gains with a
+relatively small architectural change.
+■
+CONCLUSIONS
+We have introduced an intelligent AI assistant, Aitomia, that
+helps researchers perform atomistic simulations tailored to
+their needs even without specialized knowledge of the
+underlying software. It draws on the versatility of the MLatom
+software ecosystem to enable a broad range of computational
+chemistry tasks, spanning both traditional QM (DFT, HF, and
+post-HF; semiempirical methods) and AI atomistic models
+(universal ML interatomic potentials and beyond).
+Aitomia can assist with typical tasks such as geometry
+optimizations of minima and transition states, frequency and
+thermochemistry calculations, and simulations of IR and UV/
+vis spectra. Because of the extensive use of AI atomistic
+models, calculations are often much faster than DFT
+calculations, with better or comparable accuracy. In addition,
+Aitomia can autonomously design and execute complex
+computational workflows, enabling convenient calculations of
+reaction enthalpies, atomization energies, proton affinities, and
+related quantities using single-task AI agents. Aitomia can also
+be used as an expert advisor for performing atomistic
+simulations. Its ability to analyze calculation results and answer
+common QC and ML questions plays a promotional role,
+helping professionals and nonprofessionals conduct computa-
+tional research and analysis in related fields such as drug and
+materials design.
+By combining autonomous computational workflows with
+natural language interaction and built-in result analysis,
+Aitomia further contributes to the democratization of atomistic
+simulations.
+■
+METHODOLOGY
+LangGraph-Based Multiagent Architecture
+In the implementation of Aitomia, single computational tasks
+rely on the native tool calling capabilities of LLMs to parse
+user-provided parameters and invoke the corresponding
+computational functions. This version uses a lightweight,
+robust logic with relatively low latency in language-level
+parsing; consequently, the primary computational cost arises
+from the calculations themselves. However, this design offers
+limited flexibility and requires users to manually guide the
+workflow step-by-step to complete the desired computations.
+The Aitomia multientagent architecture is implemented
+using LangGraph, and the overall structure of task execution is
+illustrated in Figure 4. For the agent system, we adopted a
+graph-controlled dynamic routing mechanism. Specifically, a
+dedicated decision agent makes a judgment on which agent
+should be called next by using an LLM tool to output a
+structured decision. This decision is then returned to
+LangGraph, allowing the graph engine itself to perform the
+transition.
+In this design, the LLM participates in dynamic decision-
+making, but the execution flow remains explicitly governed by
+the StateGraph, ensuring reproducibility and clear separation
+between reasoning and control logic. The agents communicate
+through graph nodes, with the system featuring a main
+orchestrating agent responsible for analyzing user queries,
+designing the workflow, and orchestrating execution by calling
+upon corresponding single-task agents for specific calculations
+and file management. Each single-task agent is dedicated to an
+independent computational module (e.g., geometry optimiza-
+tion or reaction simulations) and possesses its own internal
+workflow. For simpler tasks (e.g., geometry optimization), the
+workflow follows sequential logic. The agent prepares the
+necessary inputs�such as acquiring molecular structures and
+setting calculation parameters�in order, before finally
+invoking the MLatom code to execute the calculation. For
+more complex tasks (e.g., reaction energy calculation), the
+agent employs a reasoning process and workflow design similar
+to that of the orchestrating agent, involving the invocation of
+various tools to manage complexity.
+Interaction between Aitomia and the MLatom/HPC
+Environment
+Aitomia employs a hybrid architecture that combines tool
+calling for MLatom integration with a node-local execution
+model for HPC job management. In brief, the tool generates
+MLatom input files or Python scripts from predefined
+templates and saves them to the working directory, so the
+user can later modify them. Then, it uses the command line to
+run the input files or execute the Python script. In detail, the
+workflow operates as follows:
+Integration with MLatom. The connection between
+Aitomia and the MLatom package is primarily achieved
+through function calls. We adopted this approach because
+LLMs are prone to hallucinations when generating code for
+functionalities with an insufficient amount of training data.
+Since computational stability is paramount, we chose not to
+delegate code generation to an LLM; instead, we generated an
+input file or a Python script from a predefined template for a
+task.
+The flexibility of our approach currently relies on a flexible
+combination of single-task agents operating as described above.
+This design offers a viable strategy for working with code
+packages where the LLM may be undertrained or lack
+sufficient exposure. While this approach inevitably reduces
+some flexibility, we mitigate this by breaking tasks down into
+smaller single-purpose units. One agent is responsible for one
+specific granular task, and complex tasks are achieved by
+orchestrating these smaller units.
+MLatom provides the computational backbone for Aitomia
+with dozens of interfaces and support for a wide range of
+computational chemistry tasks. The integration with MLatom
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+K
+
+is not merely about utilizing machine learning methods; it is
+fundamentally about developability and extensibility.
+Integration with HPC Clusters. The Aitomia system
+adopts a node-local execution model. When Aitomia is invoked
+through a user-facing interface, the scheduling system launches
+the main service script on an assigned compute node within
+the HPC cluster. All subsequent computational commands are
+executed from that node’s local shell environment using system
+command calls. This approach ensures that computations
+directly utilize the node’s allocated resources and the centrally
+maintained software stack accessible via the shared filesystem.
+Enhancing Model Robustness through RAG
+Although the LLM can, at the date of writing, often provide
+reasonable answers about computational chemistry and
+machine learning, it currently often hallucinates due to the
+vastness of the relevant knowledge. For example, it provides
+wrong answers about the capabilities of MLatom, which is at
+the core of our implementations. To address these issues and
+improve the model’s performance, we also integrate RAG to
+enhance Aitomia’s robustness as a lookup tool by providing
+access to external knowledge, thereby reducing hallucinations
+and improving factual accuracy (Figure 8). In Aitomia, external
+knowledge is first chunked and then represented as
+embeddings generated by the text-embedding-v3 model via
+Aliyun’s API.
+Traditional single-step RAG, while technically the simplest
+and most feasible approach, is inaccurate for complex queries
+because it performs only a single retrieval step before
+generating an answer.
+51,52
+The multistep variant performs
+much better on complex queries but is inefficient with simple
+queries.
+Adaptive-RAG presents a promising alternative,
+53
+which we
+implemented in Aitomia. For straightforward queries, it can
+answer them directly without consulting the database; for
+simple queries, it checks the database only once to ensure
+efficiency; and for complex queries, it can retrieve from the
+database multiple times until the queries are fully answered.
+53
+When RAG is activated, Aitomia determines whether the
+question is related to the database’s knowledge. If so, Aitomia
+retrieves information from the RAG database. Then LLM
+answers the user’s query based on the retrieved information.
+After getting an intermediate answer, Aitomia judges whether
+it is enough to answer the query. If not, Aitomia updates the
+query and retrieves more information from the database.
+Finally, Aitomia makes a summary and provides a complete
+answer to the initial query.
+By using this strategy, it retrieves only information relevant
+to the database, thereby reducing the number of retrievals and
+mitigating the model’s tendency to hallucinate. Therefore, we
+integrate Adaptive-RAG to enhance the robustness of our
+model. The integration of Adaptive-RAG reduces the
+probability of model hallucinations and improves the model
+performance based on user needs.
+Implementation Details
+All of the logic and APIs are implemented using JavaScript,
+HTML, the Python FastAPI library, and Uvicorn 0.34.0. In the
+RAG part, we use the text-embedding-v3 model as a vector
+database that generates embeddings of dimension 1024. We
+use RecursiveCharacterTextSplitter to make chunks, with
+chunk_size = 1000 and chunk_overlap = 200. In total, 914
+chunks were retrieved from the MLatom documentation. All
+AI agent connections and communications are coded using
+LangGraph (v 0.6.6). In all shown benchmarks, we use the
+Qwen3-Max-Preview LLM.
+At the core of Aitomia’s computational engine is MLatom,
+an open-source software package that integrates QC
+calculations with AI-enhanced atomistic simulations. MLatom
+can be easily installed locally via Python’s package manager
+(pip install mlatom), enabling researchers to operate the full
+workflow within their own computing environments. MLatom
+is based on many third-party programs, as described in its
+documentation, including Gaussian,
+10
+PySCF,
+10
+Orca,
+54,55
+MNDO,
+56
+xtb,
+57
+dftd4,
+58
+TorchANI,
+59
+mace,
+60
+sGDML,
+61
+PhysNet,
+62
+DeePMD-kit,
+63
+geomeTRIC,
+64
+and ASE.
+65
+Many
+of the state-of-the-art AI atomistic models are available as add-
+ons to MLatom via Aitomic.
+66
+Deterministic Reliability Safeguards
+Aitomia has several guards to prevent trivial errors such as
+deterministic stoichiometry checks and unit conversions. For
+example, for reaction thermochemistry, the LLM does not infer
+stoichiometric coefficients; instead, the reaction agent
+constructs an atom-conservation matrix from the optimized
+reactant and product geometries and solves for the coefficients
+mathematically via null space analysis (scipy.linalg.null_space).
+If the reaction is atomically imbalanced or underdetermined,
+the system returns an explicit error rather than proceeding with
+incorrect coefficients. Unit conversions are handled in the
+same deterministic manner: for relative energies, the
+calculation agent precomputes the reaction energy in both
+hartree and kcal/mol and reports both values, so that the LLM
+receives the converted value directly and never performs the
+unit arithmetic itself. Stereochemistry is likewise preserved
+during structure retrieval whenever explicit descriptors are
+supplied in the query: PubChem returns distinct, reproducible
+conformers for the respective enantiomers so that, for example,
+(R)- and (S)-limonene are retrieved and processed as separate
+species.
+Figure 8. Adaptive-RAG pipeline: retrieving external knowledge for enhanced generation.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+L
+
+Error Diagnosis
+Aitomia includes an LLM-based error analysis module that is
+triggered when a task fails. Aitomia aggregates the traceback
+together with task-local.log, .err, and .out files from the current
+working directory and uses this combined context to identify
+likely causes of failure and suggest corrective actions. This
+enables a more grounded diagnosis of bad input structures,
+optimizer/convergence failures, and backend software prob-
+lems.
+■
+ASSOCIATED CONTENT
+Data Availability Statement
+Data for this article are available at figshare at 10.6084/
+m9.figshare.31727860. The code used to obtain the described
+results, including benchmarks, is openly available at https://
+github.com/dralgroup/aitomia under the Apache 2.0 license.
+■
+AUTHOR INFORMATION
+Corresponding Authors
+Yuxinxin Chen − State Key Laboratory of Physical Chemistry
+of Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China;
+Aitomistic, Shenzhen 518000, China;
+ orcid.org/0000-
+0001-8398-5690; Email: chenyxx@stu.xmu.edu.cn
+Arif Ullah − School of Physics, Anhui University, Hefei, Anhui
+230601, China;
+ orcid.org/0000-0003-1702-3463;
+Email: arif@ahu.edu.cn
+Pavlo O. Dral − State Key Laboratory of Physical Chemistry
+of Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China;
+Aitomistic, Shenzhen 518000, China; Institute of Physics,
+Faculty of Physics, Astronomy, and Informatics, Nicolaus
+Copernicus University in Torun ́, Torun ́ 87-100, Poland;
+Institute of Advanced Studies, Nicolaus Copernicus University
+in Torun ́, Torun ́ 87-100, Poland;
+ orcid.org/0000-0002-
+2975-9876; Email: dral@xmu.edu.cn
+Authors
+Jinming Hu − State Key Laboratory of Physical Chemistry of
+Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China
+Hassan Nawaz − State Key Laboratory of Physical Chemistry
+of Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China
+Yi-Fan Hou − State Key Laboratory of Physical Chemistry of
+Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China;
+orcid.org/0000-0001-9188-5323
+Lijie Chi − Aitomistic, Shenzhen 518000, China
+Xin-Yu Tong − State Key Laboratory of Physical Chemistry of
+Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China
+Yuting Rui − State Key Laboratory of Physical Chemistry of
+Solid Surfaces, Department of Chemistry, College of
+Chemistry and Chemicals Engineering, and Fujian Provincial
+Key Laboratory of Theoretical and Computational
+Chemistry, Xiamen University, Xiamen 361005, China
+Complete contact information is available at:
+https://pubs.acs.org/10.1021/acs.jctc.6c00591
+Author Contributions
+#
+J.H., H.N., and Y.-F.H. are co-first authors. J.H. and H.N.:
+methodology, investigation, software, formal analysis, valida-
+tion, writing�original draft, writing�review and editing,
+visualization, and data curation. Y.H.: methodology, inves-
+tigation, software, formal analysis, validation, writing�review
+and editing, visualization, figures, and data curation. L.C.:
+software, visualization. Y.R.: formal analysis, validation, visual-
+ization, and writing�review and editing. Y.C.: methodology,
+software and writing�review and editing. A.U.: conceptualiza-
+tion, methodology, writing�original draft, writing�review
+and editing, figures, and supervision. P.O.D.: conceptualiza-
+tion, methodology, software, writing�original draft, writing�
+review and editing, visualization, resources, funding acquis-
+ition, supervision, and project administration.
+Notes
+The authors declare no competing financial interest.
+■
+ACKNOWLEDGMENTS
+P.O.D. acknowledges funding by the projects for International
+Senior Scientists (Project No.: W2531013) and for Out-
+standing Youth Scholars (Overseas, 2021) of the National
+Natural Science Foundation of China, and via the Lab project
+of the State Key Laboratory of Physical Chemistry of Solid
+Surfaces. A.U. acknowledges funding from the National
+Natural Science Foundation of China (No. W2433037) and
+Natural Science Foundation of Anhui Province (No.
+2408085QA002).
+■
+REFERENCES
+(1) Chakraborty, C.; Bhattacharya, M.; Pal, S.; Chatterjee, S.; Das,
+A.; Lee, S. S. AI-enabled language models (LMs) to large language
+models (LLMs) and multimodal large language models (MLLMs) in
+drug discovery and development. J. Adv. Res. 2025, 78, 377−389.
+(2) Cheng, G.-J.; Zhang, X.; Chung, L. W.; Xu, L.; Wu, Y.-D.
+Computational organic chemistry: bridging theory and experiment in
+establishing the mechanisms of chemical reactions. J. Am. Chem. Soc.
+2015, 137, 1706−1725.
+(3) Kato, T.; Kusakizako, T.; Jin, C.; Zhou, X.; Ohgaki, R.; Quan, L.;
+Xu, M.; Okuda, S.; Kobayashi, K.; Yamashita, K.; et al. Structural
+insights into inhibitory mechanism of human excitatory amino acid
+transporter EAAT2. Nat. Commun. 2022, 13, 4714.
+(4) Ramakrishnan, R.; Dral, P. O.; Rupp, M.; Von Lilienfeld, O. A.
+Quantum chemistry structures and properties of 134 kilo molecules.
+Sci. Data 2014, 1, 140022.
+(5) Smith, J. S.; Isayev, O.; Roitberg, A. E. ANI-1, A data set of 20
+million calculated off-equilibrium conformations for organic mole-
+cules. Sci. Data 2017, 4, 170193.
+(6) Wu, T.; Sun, M.; Huang, B. A Review of Automated Workflow
+Pipelines for Computational Chemists. Small Methods 2025, 9,
+No. e2500308.
+(7) Zhang, X.; Tan, H.; Liu, J.; Li, Z.; Wang, L.; Chen, B. W. J.
+CHEMSMART: Chemistry Simulation and Modeling Automation
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+M
+
+Toolkit for High-Efficiency Computational Chemistry Workflows.
+arXiv 2025, arXiv:2508.20042.
+(8) Migliaro, I.; Weiss, M. G. S.; Sterling, A. J. ChemRefine: An
+Open-Source Automated and Interoperable Platform for Machine
+Learning and Quantum Chemistry Simulations. J. Chem. Theory
+Comput. 2026, 22, 1736−1747.
+(9) Dral, P. O.; Ge, F.; Hou, Y.-F.; Zheng, P.; Chen, Y.; Barbatti, M.;
+Isayev, O.; Wang, C.; Xue, B.-X.; Pinheiro Jr, M.; Su, Y.; Dai, Y.;
+Chen, Y.; Zhang, S.; Zhang, L.; Ullah, A.; Zhang, Q.; Ou, Y. MLatom
+3: A Platform for Machine Learning-Enhanced Computational
+Chemistry Simulations and Workflows. J. Chem. Theory Comput.
+2024, 20, 1193−1213.
+(10) Frisch, M. J.; Trucks, G. W.; Schlegel, H. B.; Scuseria, G. E.;
+Robb, M. A.; Cheeseman, J. R.; Scalmani, G.; Barone, V.; Petersson,
+G. A.; et al. Gaussian 16, Revision A.01, Wallingford, CT, 2016.
+(11) ADF 2025.1, SCM, Theoretical Chemistry; Vrije Universiteit:
+Amsterdam, The Netherlands, 2026, http://www.scm.com.
+(12) Seritan, S.; Thompson, K.; Martínez, T. J. TeraChem Cloud: A
+high-performance computing service for scalable distributed GPU-
+accelerated electronic structure calculations. J. Chem. Inf. Model. 2020,
+60, 2126−2137.
+(13) Perri, M.; Weber, S. Web-based job submission interface for the
+GAMESS computational chemistry program. J. Chem. Educ. 2014, 91,
+2206−2208.
+(14) Aitomistic Hub: On-Demand Online Platform for Aitomistic
+Simulations; Aitomistic: Shenzhen, China, 2025−2026, https://www.
+aitomistic.xyz.
+(15) Aitomistic Lab@XMU: A Platform for Aitomistic Simulations at
+Xiamen University, 2025−2026, https://atom.xmu.edu.cn.
+(16) Xiamen Atomistic Computing Suite (XACS); Xiamen University,
+2022−2025, https://XACScloud.com.
+(17) Raucci, U.; Pieri, E.; Weir, H.; Seritan, S.; Martínez, T. J.
+ChemVox: voice-controlled quantum chemistry. ChemRxiv 2020,
+13054154.
+(18) Levy, J.; Chagunda, I. C.; Iosub, V.; Leitch, D. C.; McIndoe, J.
+S. MoleculAR: An augmented reality application for understanding
+3D geometry. J. Chem. Educ. 2024, 101, 2533−2539.
+(19) Singh, A.; Fry, A.; Perelman, A.; Tart, A.; Ganesh, A.; El-
+Kishky, A.; McLaughlin, A.; Low, A.; Ostrow, A.; Ananthram, A.
+Openai gpt-5 system Card. arXiv 2025, arXiv:2601.03267.
+(20) Achiam, J.; Adler, S.; Agarwal, S.; Ahmad, L.; Akkaya, I.;
+Aleman, F. L.; Almeida, D.; Altenschmidt, J.; Altman, S.; Anadkat, S.
+Gpt-4 Technical Report. arXiv 2023, arXiv:2303.08774.
+(21) Brown, T.; Mann, B.; Ryder, N.; Subbiah, M.; Kaplan, J. D.;
+Dhariwal, P.; Neelakantan, A.; Shyam, P.; Sastry, G.; Askell, A.
+Language models are few-shot learners. Advances in Neural
+Information Processing Systems 2020, Vol. 33, pp. 1877−1901.
+(22) Bai, J.; Bai, S.; Chu, Y.; Cui, Z.; Dang, K.; Deng, X.; Fan, Y.; Ge,
+W.; Han, Y.; Huang, F. Qwen Technical Report. arXiv 2023,
+arXiv:2309.16609.
+(23) Zheng, W.; Li, K.; Fu, P. Adaptive Large Language Model for
+Predicting Lithium-Ion Battery Degradation in Energy Storage
+Systems. Available at SSRN 4910174.
+(24) Wang, L.; Chen, X.; Du, Y.; Zhou, Y.; Gao, Y.; Cui, W.
+CataLM: empowering catalyst design through large language models.
+Int. J. Mach. Learn. Cybern. 2025, 16, 3681−3691.
+(25) Zhang, C.; Lin, Q.; Zhu, B.; Yang, H.; Lian, X.; Deng, H.;
+Zheng, J.; Liao, K. SynAsk: unleashing the power of large language
+models in organic synthesis. Chem. Sci. 2024, 16, 43−56.
+(26) Ramos, M. C.; Collison, C. J.; White, A. D. A review of large
+language models and autonomous agents in chemistry. Chem. Sci.
+2025, 16, 2514−2572.
+(27) Gadde, R. S.; Devaguptam, S.; Ren, F.; Mittal, R.; Dong, L.;
+Wang, Y.; Liu, F. Chatbot-assisted quantum chemistry for explicitly
+solvated molecules. Chem. Sci. 2025, 16, 3852−3864.
+(28) Liu, Z.; Chai, Y.; Li, J. Toward Automated Simulation Research
+Workflow through LLM Prompt Engineering Design. J. Chem. Inf.
+Model. 2025, 65, 114−124.
+(29) Campbell, Q.; Cox, S.; Medina, J.; Watterson, B.; White, A. D.
+MDCrow: Automating Molecular Dynamics Workflows with Large
+Language Models. arXiv 2025, arXiv:2502.09565.
+(30) Zou, Y.; Cheng, A. H.; Aldossary, A.; Bai, J.; Leong, S. X.;
+Campos-Gonzalez-Angulo, J. A.; Choi, C.; Ser, C. T.; Tom, G.; Wang,
+A.; Zhang, Z.; Yakavets, I.; Hao, H.; Crebolder, C.; Bernales, V.;
+Aspuru-Guzik, A. El Agente: An autonomous agent for quantum
+chemistry. Matter 2025, 8, 102263.
+(31) Hu, J.; Nawaz, H.; Rui, Y.; Chi, L.; Ullah, A.; Dral, P. O.
+Aitomia: Your Intelligent Assistant for AI-Driven Atomistic and
+Quantum Chemical Simulations. ChemRxiv 2025, 1.
+(32) Zheng, P.; Zubatyuk, R.; Wu, W.; Isayev, O.; Dral, P. O.
+Artificial Intelligence-Enhanced Quantum Chemical Method with
+Broad Applicability. Nat. Commun. 2021, 12, 7022.
+(33) Chen, Y.; Hou, Y.-F.; Isayev, O.; Dral, P. O. Universal and
+Updatable Artificial Intelligence-Enhanced Quantum Chemical
+Foundational Models. ChemRxiv 2024, 1.
+(34) Zheng, P.; Yang, W.; Wu, W.; Isayev, O.; Dral, P. O. Toward
+Chemical Accuracy in Predicting Enthalpies of Formation with
+General-Purpose Data-Driven Methods. J. Phys. Chem. Lett. 2022, 13,
+3479−3491.
+(35) Chen, Y.; Dral, P. O. AIQM2: Organic Reaction Simulations
+Beyond DFT. Chem. Sci. 2025, 16, 15901−15912.
+(36) Zhang, S.; Makos ́, M.; Jadrich, R.; Kraka, E.; Barros, K.;
+Nebgen, B.; Tretiak, S.; Isayev, O.; Lubbers, N.; Messerly, R.; Smith,
+J. S. Exploring the frontiers of condensed-phase chemistry with a
+general reactive machine learning potential. Nat. Chem. 2024, 16,
+727−734.
+(37) Smith, J. S.; Nebgen, B. T.; Zubatyuk, R.; Lubbers, N.;
+Devereux, C.; Barros, K.; Tretiak, S.; Isayev, O.; Roitberg, A. E.
+Approaching coupled cluster accuracy with a general-purpose neural
+network potential through transfer learning. Nat. Commun. 2019, 10,
+2903.
+(38) Devereux, C.; Smith, J. S.; Huddleston, K. K.; Barros, K.;
+Zubatyuk, R.; Isayev, O.; Roitberg, A. E. Extending the Applicability
+of the ANI Deep Learning Molecular Potential to Sulfur and
+Halogens. J. Chem. Theory Comput. 2020, 16, 4192−4202.
+(39) Alavi, S. F.; Chen, Y.; Hou, Y.-F.; Ge, F.; Zheng, P.; Dral, P. O.
+ANI-1ccx-gelu Universal Interatomic Potential and Its Fine-Tuning:
+Toward Accurate and Efficient Anharmonic Vibrational Frequencies.
+J. Phys. Chem. Lett. 2025, 16, 483−493.
+(40) Chen, Y.; Dral, P. O. One to Rule Them All: A Universal
+Interatomic Potential Learning across Quantum Chemical Levels. J.
+Chem. Theory Comput. 2025, 21, 8762−8772.
+(41) Martyka, M.; Tong, X.-Y.; Jankowska, J.; Dral, P. O. OMNI-P2x
+Universal Neural Network Potential for Excited-State Simulations.
+Nat. Commun. 2026, 17, 4949.
+(42) Anstine, D. M.; Zubatyuk, R.; Isayev, O. AIMNet2: a neural
+network potential to meet your neutral, charged, organic, and
+elemental-organic needs. Chem. Sci. 2025, 16, 10228−10244.
+(43) NIST Standard Reference Database 69; NIST Chemistry
+WebBook, 2025.
+(44) Yi-Fan, H.; Wang, C.; Dral, P. O. Accurate and Affordable
+Simulation of Molecular Infrared Spectra with AIQM Models. J. Phys.
+Chem. A 2025, 129, 3613−3623.
+(45) Chen, Y.; Hou, Y.-F.; Zubatyuk, R.; Isayev, O.; Dral, P. O.
+AIQM3: Targeting Coupled-Cluster Accuracy with Semi-Empirical
+Speed across Seven Main-Group Elements. J. Chem. Theory Comput.
+2026, 22, 2232−2242.
+(46) Yan, Z.; Wei, D.; Li, X.; Chung, L. W. Accelerating reliable
+multiscale quantum refinement of protein-drug systems enabled by
+machine learning. Nat. Commun. 2024, 15, 4181.
+(47) Kim, S.; Thiessen, P. A.; Bolton, E. E.; Bryant, S. H. PUG-
+SOAP and PUG-REST: web services for programmatic access to
+chemical information in PubChem. Nucleic Acids Res. 2015, 43,
+W605−W611.
+(48) NIH Cactus Chemical Identifier Resolver, 2026, https://cactus.
+nci.nih.gov/chemical/structure.
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+N
+
+(49) Landrum, G. RDKit: Open-Source Cheminformatics, 2025,
+http://www.rdkit.org.
+(50) Goerigk, L.; Hansen, A.; Bauer, C.; Ehrlich, S.; Najibi, A.;
+Grimme, S. A look at the density functional theory zoo with the
+advanced GMTKN55 database for general main group thermochem-
+istry, kinetics and noncovalent interactions. Phys. Chem. Chem. Phys.
+2017, 19, 32184−32215.
+(51) Gao, Y.; Xiong, Y.; Gao, X.; Jia, K.; Pan, J.; Bi, Y.; Dai, Y.; Sun,
+J.; Guo, Q.; Wang, M.; Wang, H. Retrieval-Augmented Generation for
+Large Language Models: A Survey. arXiv 2023, arXiv.2312.10997.
+(52) Zhao, P.; Zhang, H.; Yu, Q.; Wang, Z.; Geng, Y.; Fu, F.; Yang,
+L.; Zhang, W.; Jiang, J.; Cui, B. Retrieval-Augmented Generation for
+AI-Generated Content: A Survey. arXiv 2024, arXiv:2402.19473.
+(53) Jeong, S.; Baek, J.; Cho, S.; Hwang, S. J.; Park, J. C. Adaptive-
+Rag: Learning to Adapt retrieval-augmented Large language Models
+through Question Complexity. arXiv 2024, arXiv:2403.14403.
+(54) Neese, F. Software update: the ORCA program system, version
+4.0. Wiley Interdiscip. Rev.: Comput. Mol. Sci. 2018, 8, No. e1327.
+(55) Neese, F. The ORCA program system. Wiley Interdiscip. Rev.:
+Comput. Mol. Sci. 2012, 2, 73−78.
+(56) Thiel, W., with contributions from Beck, M.; Billeter, S.;
+Kevorkiants, R.; Kolb, M.; Koslowski, A.; Patchkovskii, S.; Turner, A.;
+Wallenborn, E.-U.; Weber, W.; Spörkel, L.; Dral, P. O. MNDO,
+development version; Max-Planck-Institut fu ̈r Kohlenforschung, Mu ̈l-
+heim an der Ruhr, 2019.
+(57) Semiempirical extended tight-binding program package xtb.
+https://github.com/grimme-lab/xtb (accessed Nov 19, 2022).
+(58) Caldeweyher, E.; Ehlert, S.; Grimme, S. DFT-D4, Version 2.5.0;
+Mulliken Center for Theoretical Chemistry, University of Bonn, 2020.
+(59) Gao, X.; Ramezanghorbani, F.; Isayev, O.; Smith, J. S.;
+Roitberg, A. E. TorchANI: A Free and Open Source PyTorch-Based
+Deep Learning Implementation of the ANI Neural Network
+Potentials. J. Chem. Inf. Model. 2020, 60, 3408−3415.
+(60) mace on, 2026 https://github.com/ACEsuit/mace.
+(61) Chmiela, S.; Sauceda, H. E.; Poltavsky, I.; Mu ̈ller, K.-R.;
+Tkatchenko, A. sGDML: Constructing accurate and data efficient
+molecular force fields using machine learning. Comput. Phys. Commun.
+2019, 240, 38−45.
+(62) Unke, O. T.; Meuwly, M. PhysNet: A Neural Network for
+Predicting Energies, Forces, Dipole Moments, and Partial Charges. J.
+Chem. Theory Comput. 2019, 15, 3678−3693.
+(63) Wang, H.; Zhang, L.; Han, J.; E, W. DeePMD-kit: A deep
+learning package for many-body potential energy representation and
+molecular dynamics. Comput. Phys. Commun. 2018, 228, 178−184.
+(64) Wang, L. P.; Song, C. Geometry optimization made simple with
+translation and rotation coordinates. J. Chem. Phys. 2016, 144,
+214108.
+(65) Hjorth Larsen, A.; Jorgen Mortensen, J.; Blomqvist, J.; Castelli,
+I. E.; Christensen, R.; Dulak, M.; Friis, J.; Groves, M. N.; Hammer, B.;
+Hargus, C.; et al. The atomic simulation environment-a Python library
+for working with atoms. J. Phys.: Condens. Matter 2017, 29, 273002.
+(66) Dral, P. O.; Chen, Y.; Martyka, M.; Li, J. Aitomic: A Package for
+AI-enhanced Atomistic Simulations; Aitomistic: Shenzhen, China, 2025,
+http://MLatom.com/aitomic (accessed April 10, 2025)..
+Journal of Chemical Theory and Computation pubs.acs.org/JCTC Article
+https://doi.org/10.1021/acs.jctc.6c00591
+J. Chem. Theory Comput. XXXX, XXX, XXX−XXX
+O
+

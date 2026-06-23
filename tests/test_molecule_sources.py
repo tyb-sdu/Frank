@@ -5,7 +5,7 @@
 import os
 import tempfile
 import pytest
-from frank.molecule_sources import (
+from frank.molecules.sources import (
     search_pubchem,
     load_xyz_file,
     xyz_string_to_molecule,
