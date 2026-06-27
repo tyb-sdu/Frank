@@ -91,3 +91,60 @@ def set_save_runs(enabled: bool) -> None:
     config["save_runs"] = enabled
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
+
+
+def get_database_url() -> str:
+    """Return SQLAlchemy database URL (PostgreSQL or SQLite fallback)."""
+    env = os.environ.get("FRANK_DATABASE_URL")
+    if env:
+        return env
+    config = _load_config_json()
+    if config.get("database_url"):
+        return config["database_url"]
+    default_sqlite = os.path.join(_get_config_dir(), "frank.db")
+    return f"sqlite:///{default_sqlite}"
+
+
+def get_redis_url() -> str:
+    """Return Redis URL for pub/sub progress."""
+    env = os.environ.get("FRANK_REDIS_URL")
+    if env:
+        return env
+    config = _load_config_json()
+    return config.get("redis_url", "redis://localhost:6379/0")
+
+
+def get_broker_url() -> str:
+    """Return Celery broker URL."""
+    env = os.environ.get("FRANK_BROKER_URL")
+    if env:
+        return env
+    config = _load_config_json()
+    return config.get("broker_url", get_redis_url())
+
+
+def get_result_backend_url() -> str:
+    """Return Celery result backend URL."""
+    env = os.environ.get("FRANK_RESULT_BACKEND")
+    if env:
+        return env
+    config = _load_config_json()
+    return config.get("result_backend", get_redis_url())
+
+
+def get_store_enabled() -> bool:
+    """Whether to persist calculation jobs to CalcStore."""
+    env = os.environ.get("FRANK_STORE_ENABLED")
+    if env is not None:
+        return env.lower() in ("1", "true", "yes", "on")
+    config = _load_config_json()
+    return config.get("store_enabled", True)
+
+
+def set_store_enabled(enabled: bool) -> None:
+    """Enable or disable CalcStore persistence."""
+    config_path = os.path.join(_get_config_dir(), "config.json")
+    config = _load_config_json()
+    config["store_enabled"] = enabled
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)

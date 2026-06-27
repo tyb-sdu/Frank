@@ -20,6 +20,7 @@ def register(mcp: FastMCP) -> None:
         query: str,
         interpret: bool = True,
         timeout: Optional[int] = None,
+        execution_mode: str = "auto",
     ) -> dict:
         """Generate and execute a PySCF calculation from natural language.
 
@@ -29,12 +30,13 @@ def register(mcp: FastMCP) -> None:
             query: Natural language request (e.g. '计算水分子 B3LYP/6-31G* 能量').
             interpret: Include human-readable result interpretation.
             timeout: Override execution timeout in seconds (default from FRANK_TIMEOUT env).
+            execution_mode: 'local' to run PySCF locally, 'export' to only save scripts for Slurm, or 'auto'.
         """
         agent = get_agent()
         if timeout:
             agent.executor.timeout = timeout
 
-        result = agent.run(query, interpret=interpret)
+        result = agent.run(query, interpret=interpret, execution_mode=execution_mode)
 
         return {
             "intent": intent_summary(result["intent"]),

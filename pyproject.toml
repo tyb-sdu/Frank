@@ -37,11 +37,28 @@ dependencies = [
 psi4 = ["psi4>=1.8"]
 mcp = ["mcp>=1.0"]
 langgraph = ["langgraph>=0.2", "langchain-core>=0.3"]
-dev = ["pytest>=7.0", "pytest-cov", "mcp>=1.0", "langgraph>=0.2", "langchain-core>=0.3"]
+store = [
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "celery[redis]>=5.3",
+    "redis>=5.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "mcp>=1.0",
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
+    "sqlalchemy>=2.0",
+    "celery[redis]>=5.3",
+    "redis>=5.0",
+]
 
 [project.scripts]
 frank = "frank.cli.main_cli:main"
 frank-mcp = "frank.mcp.server:main"
+frank-worker = "frank.queue.worker:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["frank"]

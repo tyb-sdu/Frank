@@ -209,8 +209,10 @@ def ask(ctx, query):
 @click.option("--timeout", "-t", default=600, help="Timeout in seconds")
 @click.option("--export", "-e", default=None, help="Export results to file")
 @click.option("--export-format", default="json", type=click.Choice(["json", "csv"]), help="Export format")
+@click.option("--store", is_flag=True, help="Persist job and results to CalcStore")
+@click.option("--mode", default="auto", type=click.Choice(["auto", "local", "export"]), help="Execution mode")
 @click.pass_context
-def run(ctx, query, no_interpret, no_plot, timeout, export, export_format):
+def run(ctx, query, no_interpret, no_plot, timeout, export, export_format, store, mode):
     """Generate code and execute the calculation."""
     if not query:
         console.print("Please provide a calculation request.", style="red")
@@ -220,7 +222,7 @@ def run(ctx, query, no_interpret, no_plot, timeout, export, export_format):
     console.print(f"\nExecuting calculation...", style="bold")
 
     agent = create_agent(timeout=timeout, classic=ctx.obj.get("classic", False))
-    result = agent.run(text, interpret=not no_interpret)
+    result = agent.run(text, interpret=not no_interpret, persist_to_store=store, execution_mode=mode)
 
     if result["code"]:
         console.print("\nGenerated code:", style="bold")
@@ -241,6 +243,9 @@ def run(ctx, query, no_interpret, no_plot, timeout, export, export_format):
         else:
             export_to_json(result, export)
             console.print(f"\nResults exported to {export} (JSON)", style="dim")
+
+    if store and result.get("job_id"):
+        console.print(f"\nStored in CalcStore: {result['job_id'][:8]}...", style="dim")
 
 
 def print_workflow_plan(plan):
@@ -1144,6 +1149,10 @@ def _handle_inline_batch(agent: FrankAgent, args: str):
             console.print(f"Error: {str(e)}", style="red")
     else:
         console.print("Usage: batch <mol1,mol2,...> [method] [basis]", style="yellow")
+
+
+from .store_cli import register_store_commands
+register_store_commands(main)
 
 
 if __name__ == "__main__":

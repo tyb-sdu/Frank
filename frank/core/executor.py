@@ -34,18 +34,35 @@ class ExecutionResult:
 
 
 class PySCFExecutor:
-    def __init__(self, work_dir: Optional[str] = None, timeout: int = 600, persist_runs: bool = True):
+    def __init__(self, work_dir: Optional[str] = None, timeout: int = 600, persist_runs: bool = True, execution_mode: str = "local"):
         self.work_dir = work_dir
         self.timeout = timeout
         self.persist_runs = persist_runs
+        self.execution_mode = execution_mode
         self.last_run_dir: Optional[RunDirectory] = None
+
+    def _generate_slurm_script(self, job_name: str, script_name: str) -> str:
+        return f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=16G
+#SBATCH --time=24:00:00
+#SBATCH --output={job_name}_%j.log
+
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export PYSCF_MAX_MEMORY=16000
+
+python {script_name}
+"""
 
     def execute(self, script: str, job_name: str = "frank_job") -> ExecutionResult:
         run_dir = None
         if self.work_dir:
             work_dir = Path(self.work_dir)
             work_dir.mkdir(parents=True, exist_ok=True)
-        elif self.persist_runs:
+        elif self.persist_runs or self.execution_mode == "export":
             run_dir = create_run_directory(job_name)
             if run_dir:
                 work_dir = run_dir.path
@@ -62,6 +79,9 @@ class PySCFExecutor:
 
         try:
             script_file.write_text(enhanced_script, encoding="utf-8")
+            if self.execution_mode in ("export", "slurm"):
+                slurm_script = work_dir / "submit.slurm"
+                slurm_script.write_text(self._generate_slurm_script(job_name, f"{job_name}.py"), encoding="utf-8")
         except OSError as e:
             return ExecutionResult(
                 success=False,
@@ -72,6 +92,48 @@ class PySCFExecutor:
                 error_type="file_error",
                 error_message=f"无法写入脚本文件: {str(e)}",
             )
+
+        if self.execution_mode == "export":
+            msg = f"已成功导出到 {work_dir}。请使用 sbatch submit.slurm 提交作业。"
+            exec_result = ExecutionResult(
+                success=True,
+                return_code=0,
+                stdout=msg,
+                stderr="",
+                log_content="",
+                duration=0.0,
+                output_dir=str(work_dir),
+                error_type=None,
+                error_message=None,
+                extracted_results={},
+            )
+            if run_dir:
+                run_dir.save_execution(exec_result, {"job_name": job_name, "mode": "export"})
+            return exec_result
+
+        if self.execution_mode == "slurm":
+            import subprocess
+            try:
+                res = subprocess.run(["sbatch", "submit.slurm"], cwd=str(work_dir), capture_output=True, text=True, check=True)
+                msg = f"已通过 Slurm 提交作业到 {work_dir}。\n{res.stdout}"
+            except Exception as e:
+                msg = f"已导出到 {work_dir}，但自动提交 sbatch 失败 (可能是当前环境没有 slurm)。\n错误信息: {e}"
+            
+            exec_result = ExecutionResult(
+                success=True,
+                return_code=0,
+                stdout=msg,
+                stderr="",
+                log_content="",
+                duration=0.0,
+                output_dir=str(work_dir),
+                error_type=None,
+                error_message=None,
+                extracted_results={},
+            )
+            if run_dir:
+                run_dir.save_execution(exec_result, {"job_name": job_name, "mode": "slurm"})
+            return exec_result
 
         start_time = time.time()
         try:

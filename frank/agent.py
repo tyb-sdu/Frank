@@ -671,7 +671,7 @@ class FrankAgent:
             "warnings": intent.warnings,
         }
 
-    def run(self, text: str, interpret: bool = True) -> dict:
+    def run(self, text: str, interpret: bool = True, persist_to_store: bool = False, execution_mode: str = "auto") -> dict:
         intent = self.parse_intent(text)
 
         code = None
@@ -699,9 +699,77 @@ class FrankAgent:
 
         mol = get_molecule(intent.molecule)
         job_name = f"{mol.name}_{intent.method or 'b3lyp'}".lower()
-        execution, retry_log = self.executor.execute_with_recovery(
-            script, job_name, original_basis=intent.basis
-        )
+
+        # Cost estimation and auto-routing
+        from .core.cost_estimator import estimate_job_cost
+        estimation = estimate_job_cost(intent.molecule, intent.method, intent.basis, intent.calc_type)
+        actual_mode = estimation.recommended_mode if execution_mode == "auto" else execution_mode
+
+        # Fallback to local if queue is recommended but not explicitly requested via queue command
+        if actual_mode == "queue":
+            actual_mode = "local" # Could also warn the user
+
+        intent.warnings.append(f"成本预估: {estimation.reason} 预计时间: {estimation.estimated_time_str}, 内存: {estimation.memory_req_str}. 采用模式: {actual_mode}")
+
+        job_id = None
+
+        if actual_mode == "queue":
+            from .queue.service import JobSubmissionService
+            try:
+                service = JobSubmissionService(agent=self, timeout=self.executor.timeout)
+                submit_res = service._submit_single(text)
+                job_id = submit_res.job_id
+                
+                execution = ExecutionResult(
+                    success=True,
+                    return_code=0,
+                    stdout=f"作业已提交至后台队列 (Job ID: {job_id})。\n使用 `frank status {job_id[:8]}` 查看状态。",
+                    stderr="",
+                    log_content="",
+                    duration=0.0,
+                    output_dir="",
+                    error_type=None,
+                    error_message=None,
+                    extracted_results={},
+                )
+                retry_log = []
+            except Exception as e:
+                intent.warnings.append(f"后台队列提交失败，可能未启动 Celery 或 Redis。错误: {e}")
+                execution = ExecutionResult(
+                    success=False,
+                    return_code=-1,
+                    stdout="",
+                    stderr=str(e),
+                    output_dir="",
+                    error_type="queue_error",
+                    error_message=str(e),
+                )
+                retry_log = []
+        else:
+            # Override executor mode temporarily
+            original_mode = self.executor.execution_mode
+            self.executor.execution_mode = actual_mode
+
+            if persist_to_store:
+                from .store.persist import create_job_for_run
+                job_id = create_job_for_run(
+                    molecule_name=intent.molecule,
+                    method=intent.method,
+                    basis=intent.basis,
+                    calc_type=intent.calc_type,
+                    query_text=text,
+                    job_name=job_name,
+                    force=persist_to_store,
+                )
+
+            execution, retry_log = self.executor.execute_with_recovery(
+                script, job_name, original_basis=intent.basis
+            )
+            self.executor.execution_mode = original_mode
+
+            if job_id:
+                from .store.persist import persist_execution_to_store
+                persist_execution_to_store(job_id, execution, force=persist_to_store)
 
         parsed = {}
         plain_language = ""
@@ -753,6 +821,7 @@ class FrankAgent:
             "warnings": intent.warnings,
             "plain_language": plain_language,
             "error_diagnosis": error_diagnosis,
+            "job_id": job_id,
         }
 
     def run_workflow(

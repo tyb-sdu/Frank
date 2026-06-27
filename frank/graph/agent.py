@@ -72,8 +72,8 @@ class FrankGraphAgent:
     def process_request(self, text: str) -> dict:
         return self.invoke(text, execute=False, interpret=False)
 
-    def run(self, text: str, interpret: bool = True) -> dict:
-        return self.invoke(text, execute=True, interpret=interpret)
+    def run(self, text: str, interpret: bool = True, execution_mode: str = "auto") -> dict:
+        return self.invoke(text, execute=True, interpret=interpret)  # Graph mode doesn't strictly support mode yet without state changes, but we'll accept the param
 
     def run_autonomous(
         self,
