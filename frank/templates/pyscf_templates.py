@@ -95,10 +95,10 @@ print(f"MP2 总能量: {{pt.e_tot:.10f}} Hartree")"""
         )
 
     def _ccsd_block(self, mf_var: str = "mf") -> CodeBlock:
-        code = f"""cc = cc.CCSD({mf_var})
-cc.kernel()
-print(f"CCSD 相关能: {{cc.e_corr:.10f}} Hartree")
-print(f"CCSD 总能量: {{cc.e_tot:.10f}} Hartree")"""
+        code = f"""mycc = cc.CCSD({mf_var})
+mycc.kernel()
+print(f"CCSD 相关能: {{mycc.e_corr:.10f}} Hartree")
+print(f"CCSD 总能量: {{mycc.e_tot:.10f}} Hartree")"""
 
         return CodeBlock(
             section="calculation",
@@ -108,12 +108,12 @@ print(f"CCSD 总能量: {{cc.e_tot:.10f}} Hartree")"""
         )
 
     def _ccsd_t_block(self, mf_var: str = "mf") -> CodeBlock:
-        code = f"""cc = cc.CCSD({mf_var})
-cc.kernel()
-et = cc.ccsd_t()
-print(f"CCSD 相关能: {{cc.e_corr:.10f}} Hartree")
+        code = f"""mycc = cc.CCSD({mf_var})
+mycc.kernel()
+et = mycc.ccsd_t()
+print(f"CCSD 相关能: {{mycc.e_corr:.10f}} Hartree")
 print(f"(T) 校正: {{et:.10f}} Hartree")
-print(f"CCSD(T) 总能量: {{cc.e_tot + et:.10f}} Hartree")"""
+print(f"CCSD(T) 总能量: {{mycc.e_tot + et:.10f}} Hartree")"""
 
         return CodeBlock(
             section="calculation",
@@ -176,6 +176,89 @@ print(f"NEVPT2 能量: {{pt.e_tot:.10f}} Hartree")"""
             description="NEVPT2 校正",
         )
 
+    def _casci_block(self, norb: int, nelec: int, mf_var: str = "mf") -> CodeBlock:
+        code = f"""# CASCI 计算（不优化轨道）
+mc = mcscf.CASCI({mf_var}, {norb}, {nelec})
+mc.kernel()
+print(f"CASCI 能量: {{mc.e_tot:.10f}} Hartree")"""
+
+        return CodeBlock(
+            section="calculation",
+            code=code,
+            order=10,
+            description=f"CASCI({norb},{nelec}) 计算",
+        )
+
+    def _adc_block(self, n_states: int, mf_var: str = "mf") -> CodeBlock:
+        code = f"""# ADC(2) 激发态计算
+from pyscf import adc
+myadc = adc.ADC({mf_var})
+myadc.method = "adc(2)"
+myadc.method_type = "ee"  # 电子激发 (EE)
+myadc.kernel_gs()  # 基态相关能
+e_ex = myadc.kernel(nroots={n_states})[0]
+
+import numpy as np
+print("\\nADC(2) 激发能 (eV):")
+for i, e in enumerate(np.atleast_1d(e_ex)):
+    ev = e * 27.2114
+    print(f"  状态 {{i+1}}: {{ev:.4f}} eV ({{1240.0/ev:.1f}} nm)")"""
+
+        return CodeBlock(
+            section="calculation",
+            code=code,
+            order=10,
+            description=f"ADC(2) 激发态计算（{n_states} 个态）",
+        )
+
+    def _eom_ccsd_block(self, n_states: int, mf_var: str = "mf") -> CodeBlock:
+        code = f"""# EOM-CCSD 激发态计算
+mycc = cc.CCSD({mf_var})
+mycc.kernel()
+print(f"CCSD 相关能: {{mycc.e_corr:.10f}} Hartree")
+
+e_ee = mycc.eomee_ccsd_singlet(nroots={n_states})[0]
+
+import numpy as np
+print("\\nEOM-CCSD 单重激发能 (eV):")
+for i, e in enumerate(np.atleast_1d(e_ee)):
+    ev = e * 27.2114
+    print(f"  状态 {{i+1}}: {{ev:.4f}} eV ({{1240.0/ev:.1f}} nm)")"""
+
+        return CodeBlock(
+            section="calculation",
+            code=code,
+            order=10,
+            description=f"EOM-CCSD 激发态计算（{n_states} 个态）",
+        )
+
+    def _cisd_block(self, mf_var: str = "mf") -> CodeBlock:
+        code = f"""# CISD 计算
+myci = ci.CISD({mf_var})
+myci.kernel()
+print(f"CISD 相关能: {{myci.e_corr:.10f}} Hartree")
+print(f"CISD 总能量: {{myci.e_tot:.10f}} Hartree")"""
+
+        return CodeBlock(
+            section="calculation",
+            code=code,
+            order=10,
+            description="CISD 计算",
+        )
+
+    def _fci_block(self, mf_var: str = "mf") -> CodeBlock:
+        code = f"""# FCI 全组态相互作用（仅适用于极小体系）
+cisolver = fci.FCI({mf_var})
+e_fci, ci_vec = cisolver.kernel()
+print(f"FCI 总能量: {{e_fci:.10f}} Hartree")"""
+
+        return CodeBlock(
+            section="calculation",
+            code=code,
+            order=10,
+            description="FCI 计算",
+        )
+
     def _geometry_opt_block(self, mf_var: str = "mf") -> CodeBlock:
         code = f"""# 几何优化
 from pyscf.geomopt.geometric_solver import optimize
@@ -211,13 +294,19 @@ print(f"零点能: {{freq_analysis['ZPE'][0]:.6f}} Hartree")"""
 
     def _population_analysis_block(self, mf_var: str = "mf") -> CodeBlock:
         code = f"""# 布居分析
-from pyscf import lo
-pop = {mf_var}.mulliken_pop()
-print(f"Mulliken 布居: {{pop}}")
+pop, charges = {mf_var}.mulliken_pop()
+print("Mulliken 原子电荷:")
+for i, q in enumerate(charges):
+    print(f"  原子 {{i}} ({{mol.atom_symbol(i)}}): {{q:+.4f}}")
 
-# NAO 布居
-nao_pop = lo.nao.init_guess_by_nao(mol)
-print(f"NAO 布居分析完成")"""
+# meta-Löwdin 布居（对基组更稳健）
+try:
+    pop_meta, charges_meta = {mf_var}.mulliken_meta()
+    print("\\nmeta-Löwdin 原子电荷:")
+    for i, q in enumerate(charges_meta):
+        print(f"  原子 {{i}} ({{mol.atom_symbol(i)}}): {{q:+.4f}}")
+except Exception as e:
+    print(f"meta-Löwdin 布居不可用: {{e}}")"""
 
         return CodeBlock(
             section="analysis",
@@ -278,22 +367,47 @@ print(f"偶极矩 (Debye): {{dip}}")"""
             description="Compute electric dipole moment to assess molecular polarity",
         )
 
-    def _solvation_block(self, model: str, solvent: str) -> CodeBlock:
+    def _solvation_block(self, model: str, solvent: str, mf_var: str = "mf") -> CodeBlock:
         solvent_info = get_solvent(solvent)
         eps = solvent_info.dielectric
 
-        code = f"""# 溶剂化模型 ({model})
+        try:
+            pyscf_method = get_solvation_model(model).pyscf_method.upper()
+        except KeyError:
+            pyscf_method = model.upper()
+
+        if pyscf_method == "SMD":
+            code = f"""# 溶剂化模型 (SMD, {solvent_info.name_cn})
+from pyscf.solvent import smd
+{mf_var}_sol = smd.SMD({mf_var})
+{mf_var}_sol.with_solvent.solvent = '{solvent_info.pyscf_name}'  # SMD 内置溶剂参数
+e_sol = {mf_var}_sol.kernel()
+print(f"SMD 溶剂化总能量: {{e_sol:.10f}} Hartree")"""
+            description = f"Apply SMD solvation model in {solvent_info.name_cn}"
+        else:
+            # PCM 家族：PCM(IEF-PCM)、CPCM(C-PCM)、COSMO 均由 solvent.PCM 提供
+            pcm_method = {
+                "PCM": "IEF-PCM",
+                "CPCM": "C-PCM",
+                "COSMO": "COSMO",
+            }.get(pyscf_method, "IEF-PCM")
+            code = f"""# 溶剂化模型 ({model}, {solvent_info.name_cn})
 from pyscf import solvent
-mf_sol = solvent.PCM(mol, mf)
-mf_sol.eps = {eps}  # {solvent_info.name_cn} 介电常数
-mf_sol.kernel()
-print(f"溶剂化能量: {{mf_sol.e_tot:.10f}} Hartree")"""
+{mf_var}_sol = solvent.PCM({mf_var})
+{mf_var}_sol.with_solvent.method = '{pcm_method}'
+{mf_var}_sol.with_solvent.eps = {eps}  # {solvent_info.name_cn} 介电常数
+e_sol = {mf_var}_sol.kernel()
+print(f"{model} 溶剂化总能量: {{e_sol:.10f}} Hartree")"""
+            description = (
+                f"Apply {model} ({pcm_method}) implicit solvation model with "
+                f"{solvent_info.name_cn} solvent (epsilon = {eps})"
+            )
 
         return CodeBlock(
             section="method_setup",
             code=code,
             order=5,
-            description=f"Apply {model} implicit solvation model with {solvent_info.name_cn} solvent (epsilon = {eps})",
+            description=description,
         )
 
     def _output_setup(self, output_file: Optional[str]) -> tuple[CodeBlock, str]:
@@ -498,6 +612,168 @@ print(f"溶剂化能量: {{mf_sol.e_tot:.10f}} Hartree")"""
             description=f"使用 CASSCF({norb},{nelec})/{basis} 计算 {mol.name_cn}",
             blocks=blocks,
             run_instructions=f"pip install pyscf && python {mol_name}_casscf.py",
+        )
+
+    def generate_casci(
+        self,
+        mol_name: str,
+        basis: str = "cc-pvdz",
+        norb: int = 4,
+        nelec: int = 4,
+        output_file: Optional[str] = None,
+        **kwargs
+    ) -> GeneratedCode:
+        mol = self._get_mol(mol_name)
+        method = choose_scf_type(mol.spin)
+
+        blocks = [
+            self._import_block(["gto", "scf", "mcscf"]),
+            self._basis_setup(basis),
+            self._molecule_block(mol),
+            self._scf_block(method, mol),
+            self._casci_block(norb, nelec),
+        ]
+
+        return GeneratedCode(
+            title=f"{mol.name_cn} ({mol.formula}) CASCI({norb},{nelec}) 计算",
+            description=f"使用 CASCI({norb},{nelec})/{basis} 计算 {mol.name_cn}",
+            blocks=blocks,
+            run_instructions=f"pip install pyscf && python {mol_name}_casci.py",
+        )
+
+    def generate_nevpt2(
+        self,
+        mol_name: str,
+        basis: str = "cc-pvdz",
+        norb: int = 4,
+        nelec: int = 4,
+        output_file: Optional[str] = None,
+        note: str = "",
+        **kwargs
+    ) -> GeneratedCode:
+        mol = self._get_mol(mol_name)
+        method = choose_scf_type(mol.spin)
+
+        blocks = [
+            self._import_block(["gto", "scf", "mcscf", "mrpt"]),
+            self._basis_setup(basis),
+            self._molecule_block(mol),
+            self._scf_block(method, mol),
+            self._casscf_block(norb, nelec),
+            self._nevpt2_block(),
+        ]
+
+        description = f"使用 CASSCF({norb},{nelec}) + NEVPT2/{basis} 计算 {mol.name_cn}"
+        if note:
+            description += f"（{note}）"
+
+        return GeneratedCode(
+            title=f"{mol.name_cn} ({mol.formula}) NEVPT2 计算",
+            description=description,
+            blocks=blocks,
+            run_instructions=f"pip install pyscf && python {mol_name}_nevpt2.py",
+        )
+
+    def generate_adc(
+        self,
+        mol_name: str,
+        basis: str = "cc-pvdz",
+        n_states: int = 6,
+        output_file: Optional[str] = None,
+        **kwargs
+    ) -> GeneratedCode:
+        mol = self._get_mol(mol_name)
+        method = choose_scf_type(mol.spin)
+
+        blocks = [
+            self._import_block(["gto", "scf"]),
+            self._basis_setup(basis),
+            self._molecule_block(mol),
+            self._scf_block(method, mol),
+            self._adc_block(n_states),
+        ]
+
+        return GeneratedCode(
+            title=f"{mol.name_cn} ({mol.formula}) ADC(2) 激发态计算",
+            description=f"使用 ADC(2)/{basis} 计算 {mol.name_cn} 的 {n_states} 个激发态",
+            blocks=blocks,
+            run_instructions=f"pip install pyscf && python {mol_name}_adc2.py",
+        )
+
+    def generate_eom_ccsd(
+        self,
+        mol_name: str,
+        basis: str = "cc-pvdz",
+        n_states: int = 3,
+        output_file: Optional[str] = None,
+        **kwargs
+    ) -> GeneratedCode:
+        mol = self._get_mol(mol_name)
+        method = choose_scf_type(mol.spin)
+
+        blocks = [
+            self._import_block(["gto", "scf", "cc"]),
+            self._basis_setup(basis),
+            self._molecule_block(mol),
+            self._scf_block(method, mol),
+            self._eom_ccsd_block(n_states),
+        ]
+
+        return GeneratedCode(
+            title=f"{mol.name_cn} ({mol.formula}) EOM-CCSD 激发态计算",
+            description=f"使用 EOM-CCSD/{basis} 计算 {mol.name_cn} 的 {n_states} 个激发态",
+            blocks=blocks,
+            run_instructions=f"pip install pyscf && python {mol_name}_eomccsd.py",
+        )
+
+    def generate_cisd(
+        self,
+        mol_name: str,
+        basis: str = "cc-pvdz",
+        output_file: Optional[str] = None,
+        **kwargs
+    ) -> GeneratedCode:
+        mol = self._get_mol(mol_name)
+        method = choose_scf_type(mol.spin)
+
+        blocks = [
+            self._import_block(["gto", "scf", "ci"]),
+            self._basis_setup(basis),
+            self._molecule_block(mol),
+            self._scf_block(method, mol),
+            self._cisd_block(),
+        ]
+
+        return GeneratedCode(
+            title=f"{mol.name_cn} ({mol.formula}) CISD 计算",
+            description=f"使用 CISD/{basis} 计算 {mol.name_cn} 的相关能",
+            blocks=blocks,
+            run_instructions=f"pip install pyscf && python {mol_name}_cisd.py",
+        )
+
+    def generate_fci(
+        self,
+        mol_name: str,
+        basis: str = "cc-pvdz",
+        output_file: Optional[str] = None,
+        **kwargs
+    ) -> GeneratedCode:
+        mol = self._get_mol(mol_name)
+        method = choose_scf_type(mol.spin)
+
+        blocks = [
+            self._import_block(["gto", "scf", "fci"]),
+            self._basis_setup(basis),
+            self._molecule_block(mol),
+            self._scf_block(method, mol),
+            self._fci_block(),
+        ]
+
+        return GeneratedCode(
+            title=f"{mol.name_cn} ({mol.formula}) FCI 计算",
+            description=f"使用 FCI/{basis} 计算 {mol.name_cn} 的精确能量（小体系）",
+            blocks=blocks,
+            run_instructions=f"pip install pyscf && python {mol_name}_fci.py",
         )
 
     def generate_geometry_opt(
@@ -986,6 +1262,7 @@ print(f"PBC-DFT 能量: {mf.e_tot:.10f} Hartree")"""
         basis: str = "6-31g*",
         calc_type: str = "energy",
         solvent: Optional[str] = None,
+        solvent_model: str = "PCM",
         n_states: int = 6,
         norb: int = 4,
         nelec: int = 4,
@@ -994,8 +1271,30 @@ print(f"PBC-DFT 能量: {mf.e_tot:.10f} Hartree")"""
     ) -> GeneratedCode:
         method_lower = method.lower()
 
+        # 激发态方法（含 ADC(2)/EOM-CCSD 的显式路由，避免落入 TDDFT）
+        if "adc" in method_lower:
+            return self.generate_adc(mol_name, basis, n_states, output_file, **kwargs)
+
+        if "eom" in method_lower:
+            return self.generate_eom_ccsd(mol_name, basis, n_states, output_file, **kwargs)
+
         if calc_type == "excited" or "tddft" in method_lower or "td-dft" in method_lower:
             return self.generate_tddft(mol_name, method, basis, n_states, output_file, **kwargs)
+
+        # 多参考方法
+        if "nevpt2" in method_lower:
+            return self.generate_nevpt2(mol_name, basis, norb, nelec, output_file, **kwargs)
+
+        if "caspt2" in method_lower:
+            # PySCF 核心不含 CASPT2，采用无入侵态的 NEVPT2 作为等价替代
+            return self.generate_nevpt2(
+                mol_name, basis, norb, nelec, output_file,
+                note="PySCF 核心不支持 CASPT2，已改用等价的 NEVPT2",
+                **kwargs
+            )
+
+        if "casci" in method_lower:
+            return self.generate_casci(mol_name, basis, norb, nelec, output_file, **kwargs)
 
         if calc_type == "casscf" or "casscf" in method_lower:
             return self.generate_casscf(mol_name, basis, norb, nelec, output_file, **kwargs)
@@ -1009,6 +1308,11 @@ print(f"PBC-DFT 能量: {mf.e_tot:.10f} Hartree")"""
         if calc_type == "nbo":
             return self.generate_nbo(mol_name, method, basis, output_file, **kwargs)
 
+        if calc_type == "solvation" and solvent:
+            return self.generate_solvation(
+                mol_name, method, basis, solvent, solvent_model, output_file, **kwargs
+            )
+
         if "ccsd(t)" in method_lower or "ccsd-t" in method_lower:
             return self.generate_ccsd_t(mol_name, basis, output_file, **kwargs)
 
@@ -1018,16 +1322,29 @@ print(f"PBC-DFT 能量: {mf.e_tot:.10f} Hartree")"""
         if "mp2" in method_lower:
             return self.generate_mp2(mol_name, basis, output_file, **kwargs)
 
-        is_dft = method_lower not in ["hf", "rhf", "uhf", "rohf"]
-        if is_dft:
-            result = self.generate_dft(mol_name, method, basis, output_file, **kwargs)
-        else:
+        if "cisd" in method_lower:
+            return self.generate_cisd(mol_name, basis, output_file, **kwargs)
+
+        if method_lower == "fci":
+            return self.generate_fci(mol_name, basis, output_file, **kwargs)
+
+        if method_lower in ["hf", "rhf", "uhf", "rohf"]:
             result = self.generate_scf(mol_name, method, basis, output_file, **kwargs)
+        else:
+            try:
+                result = self.generate_dft(mol_name, method, basis, output_file, **kwargs)
+            except KeyError:
+                raise ValueError(
+                    f"暂不支持自动生成方法 '{method}' 的代码。"
+                    "已支持：HF/RHF/UHF、DFT 泛函、MP2、CCSD、CCSD(T)、"
+                    "CISD、FCI、CASSCF、CASCI、NEVPT2、CASPT2(→NEVPT2)、"
+                    "TDDFT、ADC(2)、EOM-CCSD。"
+                )
 
         if solvent:
-            solv_block = self._solvation_block("PCM", solvent)
+            solv_block = self._solvation_block(solvent_model, solvent)
             result.blocks.append(solv_block)
             solvent_info = get_solvent(solvent)
-            result.title += f" (溶剂: {solvent_info.name_cn})"
+            result.title += f" (溶剂: {solvent_info.name_cn}, {solvent_model})"
 
         return result

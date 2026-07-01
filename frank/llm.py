@@ -53,10 +53,11 @@ INTENT_SYSTEM_PROMPT = """You are a computational chemistry intent parser. Your 
 
 Return a JSON object with these fields (use null for missing fields):
 - molecule: The molecule name, formula, or identifier (e.g., "h2o", "benzene", "caffeine")
-- method: The computational method (e.g., "HF", "B3LYP", "PBE0", "MP2", "CCSD(T)", "wB97X-D", "M06-2X")
+- method: The computational method (e.g., "HF", "B3LYP", "PBE0", "MP2", "CCSD(T)", "wB97X-D", "M06-2X", "NEVPT2", "ADC(2)", "EOM-CCSD", "CASSCF", "CASCI", "CISD", "FCI")
 - basis: The basis set (e.g., "6-31G*", "cc-pVDZ", "cc-pVTZ", "def2-TZVP", "STO-3G")
 - calc_type: The calculation type, one of: "energy", "geometry", "frequency", "excited", "casscf", "nbo", "solvation"
 - solvent: The solvent name if solvation is requested (e.g., "water", "ethanol", "dmso", "acetone")
+- solvation_model: The implicit solvation model if specified, one of: "PCM", "CPCM", "SMD", "COSMO" (null if not specified)
 - n_states: Number of excited states if TDDFT/excited calculation (integer)
 - norb: Number of active orbitals if CASSCF (integer)
 - nelec: Number of active electrons if CASSCF (integer)
@@ -124,6 +125,7 @@ def parse_intent_with_llm(text: str) -> Optional[dict]:
             "basis": result.get("basis"),
             "calc_type": result.get("calc_type"),
             "solvent": result.get("solvent"),
+            "solvation_model": result.get("solvation_model"),
             "n_states": result.get("n_states"),
             "norb": result.get("norb"),
             "nelec": result.get("nelec"),

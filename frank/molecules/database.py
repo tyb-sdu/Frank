@@ -743,25 +743,40 @@ _add(Molecule(
     electrons=52, tags=["aromatic", "amine"],
 ))
 
-# Common name aliases
-MOLECULE_ALIASES: dict[str, str] = {
-    "acetaldehyde": "ch3cho",
-    "乙醛": "ch3cho",
-    "acetone": "ch3coch3",
-    "丙酮": "ch3coch3",
-    "water": "h2o",
-    "水": "h2o",
-    "ammonia": "nh3",
-    "氨": "nh3",
-    "benzene": "c6h6",
-    "苯": "c6h6",
-    "ethene": "c2h4",
-    "乙烯": "c2h4",
-    "ethanol": "ch3ch2oh",
-    "乙醇": "ch3ch2oh",
-    "methanol": "ch3oh",
-    "甲醇": "ch3oh",
+# 中文常用名/俗名 -> 规范英文键（单一数据源，供意图解析与查库共用）
+CN_ALIASES: dict[str, str] = {
+    "水分子": "h2o", "水": "h2o",
+    "氨分子": "nh3", "氨": "nh3", "氨气": "nh3",
+    "甲烷": "ch4", "乙烯": "c2h4", "乙炔": "c2h2",
+    "苯": "c6h6", "甲醛": "h2co", "甲醇": "ch3oh",
+    "乙醇": "ch3ch2oh", "乙酸": "ch3cooh", "醋酸": "ch3cooh",
+    "丙酮": "ch3coch3", "乙醛": "ch3cho",
+    "二氧化碳": "co2", "一氧化碳": "co",
+    "氮气": "n2", "氮分子": "n2", "氧气": "o2", "氢气": "h2",
+    "氟化氢": "hf", "氯化氢": "hcl", "硫化氢": "h2s",
+    "吡啶": "c5h5n", "环己烷": "cyclohexane",
+    "乙烷": "c2h6", "丙烷": "c3h8",
+    "过氧化氢": "h2o2", "双氧水": "h2o2", "臭氧": "o3",
+    "二氧化硫": "so2", "氰化氢": "hcn", "硝酸": "hno3",
+    "甲胺": "ch3nh2", "二甲醚": "ch3och3", "甲酸": "hcooh",
+    "氯仿": "chcl3", "二氯甲烷": "ch2cl2", "四氯化碳": "ccl4",
 }
+
+# 常用英文名/俗名 -> 规范英文键
+EN_ALIASES: dict[str, str] = {
+    "acetaldehyde": "ch3cho",
+    "acetone": "ch3coch3",
+    "water": "h2o",
+    "ammonia": "nh3",
+    "benzene": "c6h6",
+    "ethene": "c2h4",
+    "ethylene": "c2h4",
+    "ethanol": "ch3ch2oh",
+    "methanol": "ch3oh",
+}
+
+# 汇总别名（保持向后兼容的公开名称）
+MOLECULE_ALIASES: dict[str, str] = {**CN_ALIASES, **EN_ALIASES}
 
 
 def get_molecule(name: str) -> Molecule:

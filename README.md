@@ -291,7 +291,7 @@ HF, RHF, UHF, ROHF
 
 ### Post-HF
 
-MP2, CCSD, CCSD(T), DF-MP2, DF-CCSD
+MP2, CCSD, CCSD(T), CISD, FCI, DF-MP2, DF-CCSD
 
 ### Excited State
 
@@ -301,9 +301,18 @@ TDDFT, TDA, CIS, ADC(2), EOM-CCSD
 
 CASSCF, CASCI, NEVPT2, CASPT2, DMRG-CASSCF
 
+> Note: PySCF core has no native CASPT2 — Frank generates the equivalent
+> intruder-state-free NEVPT2 and states this in the output.
+
 ### Solvation
 
-PCM, CPCM, SMD, COSMO
+PCM, CPCM, SMD, COSMO — the requested model is honored in the generated code
+(e.g. SMD uses `pyscf.solvent.smd.SMD`, PCM/CPCM/COSMO use `solvent.PCM` with the
+matching `with_solvent.method`).
+
+> Runnable code generation currently covers: HF/RHF/UHF, all DFT functionals,
+> MP2, CCSD, CCSD(T), CISD, FCI, CASSCF, CASCI, NEVPT2 (incl. CASPT2 fallback),
+> TDDFT, ADC(2), and EOM-CCSD.
 
 ### Relativistic
 

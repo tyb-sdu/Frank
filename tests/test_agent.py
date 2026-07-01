@@ -23,10 +23,21 @@ class TestFrankAgent:
         intent = agent.parse_intent("用 B3LYP 计算")
         assert intent.method == "B3LYP"
 
+    def test_parse_scf_method_variants(self, agent):
+        """测试显式 SCF 方法识别"""
+        assert agent.parse_intent("用 RHF 计算水分子").method == "RHF"
+        assert agent.parse_intent("用 UHF 计算氧气").method == "UHF"
+        assert agent.parse_intent("用 ROHF 计算水分子").method == "ROHF"
+
     def test_parse_basis(self, agent):
         """测试基组识别"""
         intent = agent.parse_intent("使用 6-31G* 基组")
         assert intent.basis == "6-31g*"
+
+    def test_parse_extended_basis_names(self, agent):
+        """测试更多基组写法识别"""
+        assert agent.parse_intent("用 def2-QZVP 计算水分子").basis == "def2-qzvp"
+        assert agent.parse_intent("用 6-311+G(d,p) 计算水分子").basis == "6-311+g(d,p)"
 
     def test_parse_calc_type(self, agent):
         """测试计算类型识别"""
@@ -46,6 +57,17 @@ class TestFrankAgent:
         """测试溶剂识别"""
         intent = agent.parse_intent("在水中的溶剂化")
         assert intent.solvent == "water"
+
+    def test_parse_solvent_context_case_insensitive(self, agent):
+        """测试英文溶剂上下文大小写不敏感"""
+        intent = agent.parse_intent("Calculate h2o with Solvent DMSO")
+        assert intent.solvent == "dmso"
+
+    def test_parse_accuracy_affects_recommended_basis(self, agent):
+        """测试精度意图影响默认基组推荐"""
+        intent = agent.parse_intent("高精度计算水分子能量")
+        assert intent.accuracy == "high"
+        assert intent.basis == "cc-pvtz"
 
     def test_parse_n_states(self, agent):
         """测试激发态数识别"""

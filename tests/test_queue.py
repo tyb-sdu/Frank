@@ -5,6 +5,10 @@ import tempfile
 
 import pytest
 
+# 需要可选依赖 [store]（SQLAlchemy + Celery），未安装时跳过整个模块
+pytest.importorskip("sqlalchemy", reason="需要安装可选依赖: pip install -e '.[store]'")
+pytest.importorskip("celery", reason="需要安装可选依赖: pip install -e '.[store]'")
+
 
 @pytest.fixture
 def store_and_eager_celery(monkeypatch):

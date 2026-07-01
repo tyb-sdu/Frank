@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .molecules.database import get_molecule, list_molecules, search_molecules, Molecule
+from .molecules.database import get_molecule, list_molecules, search_molecules, Molecule, CN_ALIASES
 from .molecules.sources import resolve_molecule, register_molecule
 from .basis import recommend_basis_set, get_basis_set, list_basis_sets
 from .methods.dft import get_dft_functional, list_dft_functionals, recommend_dft_functional
@@ -50,6 +50,7 @@ class ParsedIntent:
     basis: Optional[str] = None
     calc_type: Optional[str] = None
     solvent: Optional[str] = None
+    solvation_model: Optional[str] = None
     n_states: Optional[int] = None
     norb: Optional[int] = None
     nelec: Optional[int] = None
@@ -74,6 +75,9 @@ CALC_TYPE_KEYWORDS = {
 }
 
 METHOD_KEYWORDS = {
+    "ROHF": ["ROHF", "rohf"],
+    "UHF": ["UHF", "uhf"],
+    "RHF": ["RHF", "rhf"],
     "HF": ["HF", "Hartree-Fock", "hartree fock"],
     "B3LYP": ["B3LYP", "b3lyp"],
     "PBE": ["PBE", "pbe"],
@@ -86,26 +90,45 @@ METHOD_KEYWORDS = {
     "CCSD": ["CCSD", "ccsd"],
     "CCSD(T)": ["CCSD(T)", "ccsd(t)", "CCSD-T", "ccsd-t", "CCSDT"],
     "TDDFT": ["TDDFT", "td-dft", "TD-DFT", "td_dft"],
+    "EOM-CCSD": ["EOM-CCSD", "eom-ccsd", "eomccsd", "EOM"],
+    "ADC(2)": ["ADC(2)", "adc(2)", "adc2", "ADC2", "ADC"],
     "CASSCF": ["CASSCF", "casscf"],
+    "CASCI": ["CASCI", "casci"],
     "NEVPT2": ["NEVPT2", "nevpt2"],
-    "CASPT2": ["CASPT2", "caspt2"],
+    "CASPT2": ["CASPT2", "caspt2", "XMS-CASPT2", "xms-caspt2"],
+    "CISD": ["CISD", "cisd"],
+    "FCI": ["FCI", "fci", "full ci", "full-ci"],
+}
+
+SOLVATION_MODEL_KEYWORDS = {
+    "SMD": ["SMD", "smd"],
+    "CPCM": ["CPCM", "cpcm", "C-PCM", "c-pcm"],
+    "COSMO": ["COSMO", "cosmo"],
+    "PCM": ["PCM", "pcm", "IEF-PCM", "ief-pcm"],
 }
 
 BASIS_KEYWORDS = {
     "sto-3g": ["STO-3G", "sto-3g", "STO3G"],
     "3-21g": ["3-21G", "3-21g"],
+    "6-31g": ["6-31G", "6-31g"],
     "6-31g*": ["6-31G*", "6-31g*", "6-31G(d)", "6-31g(d)", "6-31Gd"],
     "6-31g**": ["6-31G**", "6-31g**", "6-31G(d,p)", "6-31g(d,p)"],
     "6-31+g*": ["6-31+G*", "6-31+g*", "6-31+G(d)", "6-31+g(d)"],
     "6-31++g**": ["6-31++G**", "6-31++g**", "6-31++G(d,p)", "6-31++g(d,p)"],
+    "6-311g": ["6-311G", "6-311g"],
+    "6-311g*": ["6-311G*", "6-311g*", "6-311G(d)", "6-311g(d)"],
     "6-311g**": ["6-311G**", "6-311g**", "6-311G(d,p)", "6-311g(d,p)"],
+    "6-311+g(d,p)": ["6-311+G(d,p)", "6-311+g(d,p)"],
     "cc-pvdz": ["cc-pVDZ", "cc-pvdz", "ccpvdz", "CC-PVDZ"],
     "cc-pvtz": ["cc-pVTZ", "cc-pvtz", "ccpvtz", "CC-PVTZ"],
     "cc-pvqz": ["cc-pVQZ", "cc-pvqz", "ccpvqz", "CC-PVQZ"],
     "aug-cc-pvdz": ["aug-cc-pVDZ", "aug-cc-pvdz", "aug-cc-pvdz"],
     "aug-cc-pvtz": ["aug-cc-pVTZ", "aug-cc-pvtz", "aug-cc-pvtz"],
     "def2-svp": ["def2-SVP", "def2-svp", "def2svp"],
+    "def2-svpd": ["def2-SVPD", "def2-svpd", "def2svpd"],
     "def2-tzvp": ["def2-TZVP", "def2-tzvp", "def2tzvp"],
+    "def2-tzvpd": ["def2-TZVPD", "def2-tzvpd", "def2tzvpd"],
+    "def2-qzvp": ["def2-QZVP", "def2-qzvp", "def2qzvp"],
 }
 
 SOLVENT_KEYWORDS = {
@@ -121,6 +144,18 @@ SOLVENT_KEYWORDS = {
     "toluene": ["甲苯", "toluene"],
     "benzene": ["苯", "benzene"],
     "cyclohexane": ["环己烷", "cyclohexane"],
+}
+
+ACCURACY_KEYWORDS = {
+    "low": [
+        "快速", "粗略", "低精度", "便宜", "省时间", "quick", "fast", "rough",
+        "low accuracy", "cheap",
+    ],
+    "medium": ["中等精度", "默认精度", "medium accuracy", "balanced"],
+    "high": [
+        "高精度", "更准确", "精确", "高水平", "high accuracy", "accurate",
+        "high precision", "production",
+    ],
 }
 
 
@@ -170,6 +205,7 @@ class FrankAgent:
             intent.basis = llm_result.get("basis")
             intent.calc_type = llm_result.get("calc_type")
             intent.solvent = llm_result.get("solvent")
+            intent.solvation_model = llm_result.get("solvation_model")
             intent.n_states = llm_result.get("n_states")
             intent.norb = llm_result.get("norb")
             intent.nelec = llm_result.get("nelec")
@@ -195,6 +231,8 @@ class FrankAgent:
             intent.method = self._extract_method(text, text_lower)
             intent.basis = self._extract_basis(text, text_lower)
             intent.solvent = self._extract_solvent(text, text_lower)
+            intent.solvation_model = self._extract_solvation_model(text_lower)
+            intent.accuracy = self._extract_accuracy(text_lower)
             intent.n_states = self._extract_n_states(text)
             intent.norb, intent.nelec = self._extract_casscf_space(text)
 
@@ -220,16 +258,11 @@ class FrankAgent:
         except KeyError:
             pass
 
-        # Try Chinese alias
-        cn_aliases = {
-            "水": "h2o", "氨": "nh3", "甲烷": "ch4", "乙烯": "c2h4",
-            "乙炔": "c2h2", "苯": "c6h6", "甲醛": "h2co", "甲醇": "ch3oh",
-            "乙醇": "c2h5oh", "乙酸": "ch3cooh", "丙酮": "ch3coch3",
-            "二氧化碳": "co2", "一氧化碳": "co", "氮气": "n2",
-            "氧气": "o2", "氢气": "h2", "氟化氢": "hf", "氯化氢": "hcl",
-        }
-        if name.lower() in cn_aliases:
-            return cn_aliases[name.lower()]
+        # Try Chinese alias (shared single source of truth)
+        if name in CN_ALIASES:
+            return CN_ALIASES[name]
+        if name.lower() in CN_ALIASES:
+            return CN_ALIASES[name.lower()]
 
         # Try molecular formula
         try:
@@ -268,26 +301,7 @@ class FrankAgent:
             )
 
     def _extract_molecule(self, text: str, text_lower: str) -> Optional[str]:
-        cn_aliases = {
-            "水分子": "h2o", "水": "h2o",
-            "氨分子": "nh3", "氨": "nh3",
-            "甲烷": "ch4", "乙烯": "c2h4",
-            "乙炔": "c2h2", "苯": "c6h6",
-            "甲醛": "h2co", "甲醇": "ch3oh",
-            "乙醇": "c2h5oh", "乙酸": "ch3cooh", "丙酮": "ch3coch3",
-            "二氧化碳": "co2", "一氧化碳": "co",
-            "氮气": "n2", "氮分子": "n2",
-            "氧气": "o2", "氢气": "h2",
-            "氟化氢": "hf", "氯化氢": "hcl", "硫化氢": "h2s",
-            "吡啶": "c5h5n", "环己烷": "cyclohexane",
-            "乙烷": "c2h6", "丙烷": "c3h8",
-            "过氧化氢": "h2o2", "臭氧": "o3",
-            "二氧化硫": "so2", "氰化氢": "hcn", "硝酸": "hno3",
-            "甲胺": "ch3nh2", "二甲醚": "ch3och3", "甲酸": "hcooh",
-            "氯仿": "chcl3", "二氯甲烷": "ch2cl2", "四氯化碳": "ccl4",
-        }
-
-        for alias, mol_name in sorted(cn_aliases.items(), key=lambda x: -len(x[0])):
+        for alias, mol_name in sorted(CN_ALIASES.items(), key=lambda x: -len(x[0])):
             if alias in text:
                 return mol_name
 
@@ -319,29 +333,92 @@ class FrankAgent:
     def _extract_method(self, text: str, text_lower: str) -> Optional[str]:
         for method, keywords in sorted(METHOD_KEYWORDS.items(), key=lambda x: -len(x[0])):
             for kw in keywords:
-                if kw.lower() in text_lower:
+                if self._keyword_in_text(kw, text_lower):
                     return method
         return None
 
     def _extract_basis(self, text: str, text_lower: str) -> Optional[str]:
+        # 取最长匹配的关键词，避免 "6-31g*" 被前缀 "6-31g" 抢先命中
+        best: tuple[int, str] | None = None
         for basis, keywords in BASIS_KEYWORDS.items():
             for kw in keywords:
-                if kw.lower() in text_lower:
-                    return basis
+                if self._keyword_in_text(kw, text_lower):
+                    if best is None or len(kw) > best[0]:
+                        best = (len(kw), basis)
+        if best:
+            return best[1]
+
+        compact_text = self._compact_basis_text(text_lower)
+        for basis_set in sorted(list_basis_sets(), key=lambda bs: -len(bs.name)):
+            variants = {basis_set.name.lower(), self._compact_basis_text(basis_set.name)}
+            variants.add(self._compact_basis_text(basis_set.name.replace("(d,p)", "**")))
+            variants.add(self._compact_basis_text(basis_set.name.replace("(d)", "*")))
+            for variant in variants:
+                if variant and variant in compact_text:
+                    return basis_set.name
         return None
 
     def _extract_solvent(self, text: str, text_lower: str) -> Optional[str]:
-        solvent_context_keywords = ["溶剂", "溶剂化", "solvent", "solvation", "溶液"]
-        has_solvent_context = any(kw in text for kw in solvent_context_keywords)
+        solvent_context_keywords = ["溶剂", "溶剂化", "solvent", "solvation", "溶液", "in ", "在"]
+        context_spans = [
+            match.span()
+            for kw in solvent_context_keywords
+            for match in re.finditer(re.escape(kw), text_lower)
+        ]
 
-        if not has_solvent_context:
+        if not context_spans:
             return None
 
+        best_match: tuple[int, str] | None = None
         for solvent, keywords in SOLVENT_KEYWORDS.items():
             for kw in keywords:
-                if kw.lower() in text_lower:
-                    return solvent
+                for start, end in self._keyword_ranges(kw, text_lower):
+                    score = len(kw)
+                    for ctx_start, ctx_end in context_spans:
+                        if start >= ctx_end:
+                            score = max(score, 1000 - min(start - ctx_end, 999) + len(kw))
+                        elif ctx_start <= start <= ctx_end + 20:
+                            score = max(score, 500 + len(kw))
+                    if best_match is None or score > best_match[0]:
+                        best_match = (score, solvent)
+        return best_match[1] if best_match else None
+
+    def _extract_solvation_model(self, text_lower: str) -> Optional[str]:
+        for model, keywords in SOLVATION_MODEL_KEYWORDS.items():
+            for kw in keywords:
+                if self._keyword_in_text(kw, text_lower):
+                    return model
         return None
+
+    def _extract_accuracy(self, text_lower: str) -> str:
+        for accuracy, keywords in ACCURACY_KEYWORDS.items():
+            for kw in keywords:
+                if kw.lower() in text_lower:
+                    return accuracy
+        return "medium"
+
+    @staticmethod
+    def _keyword_in_text(keyword: str, text_lower: str) -> bool:
+        return bool(FrankAgent._keyword_ranges(keyword, text_lower))
+
+    @staticmethod
+    def _keyword_ranges(keyword: str, text_lower: str) -> list[tuple[int, int]]:
+        keyword_lower = keyword.lower()
+        if not keyword_lower:
+            return []
+        if any(ord(ch) > 127 for ch in keyword_lower):
+            return [match.span() for match in re.finditer(re.escape(keyword_lower), text_lower)]
+        return [
+            match.span()
+            for match in re.finditer(
+                rf"(?<![a-z0-9]){re.escape(keyword_lower)}(?![a-z0-9])",
+                text_lower,
+            )
+        ]
+
+    @staticmethod
+    def _compact_basis_text(text: str) -> str:
+        return re.sub(r"[\s_/]", "", text.lower())
 
     def _extract_n_states(self, text: str) -> Optional[int]:
         patterns = [
@@ -549,7 +626,7 @@ class FrankAgent:
                     intent.norb, intent.nelec = recommend_casscf_space(
                         mol.electrons or 10, mol.name
                     )
-                except:
+                except Exception:
                     intent.norb, intent.nelec = 4, 4
             else:
                 intent.norb, intent.nelec = 4, 4
@@ -589,6 +666,7 @@ class FrankAgent:
             basis=intent.basis or "6-31g*",
             calc_type=intent.calc_type or "energy",
             solvent=intent.solvent,
+            solvent_model=intent.solvation_model or "PCM",
             n_states=intent.n_states or 6,
             norb=intent.norb or 4,
             nelec=intent.nelec or 4,
@@ -705,11 +783,22 @@ class FrankAgent:
         estimation = estimate_job_cost(intent.molecule, intent.method, intent.basis, intent.calc_type)
         actual_mode = estimation.recommended_mode if execution_mode == "auto" else execution_mode
 
-        # Fallback to local if queue is recommended but not explicitly requested via queue command
-        if actual_mode == "queue":
-            actual_mode = "local" # Could also warn the user
+        # auto 模式下不静默把重作业丢给可能未启动的队列：本地运行，但明确告知如何后台化
+        heavy_job_notice = ""
+        if execution_mode == "auto" and actual_mode == "queue":
+            actual_mode = "local"
+            heavy_job_notice = (
+                "该作业规模较大，本地运行可能较慢。建议后台队列执行："
+                f'`frank submit "{text}"`（需先启动 Celery/Redis），'
+                "或显式指定 execution_mode='queue'。"
+            )
 
-        intent.warnings.append(f"成本预估: {estimation.reason} 预计时间: {estimation.estimated_time_str}, 内存: {estimation.memory_req_str}. 采用模式: {actual_mode}")
+        intent.warnings.append(
+            f"成本预估: {estimation.reason} 预计时间: {estimation.estimated_time_str}, "
+            f"内存: {estimation.memory_req_str}. 采用模式: {actual_mode}"
+        )
+        if heavy_job_notice:
+            intent.warnings.append(heavy_job_notice)
 
         job_id = None
 
@@ -931,6 +1020,7 @@ class FrankAgent:
             basis=overrides.get("basis", intent.basis),
             calc_type=overrides.get("calc_type", intent.calc_type),
             solvent=overrides.get("solvent", intent.solvent),
+            solvation_model=overrides.get("solvation_model", intent.solvation_model),
             n_states=overrides.get("n_states", intent.n_states),
             norb=overrides.get("norb", intent.norb),
             nelec=overrides.get("nelec", intent.nelec),

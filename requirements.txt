@@ -1,5 +1,14 @@
+# 核心运行依赖（与 pyproject.toml [project.dependencies] 保持一致）
 pyscf>=2.4.0
 rdkit>=2023.3.0
 rich>=13.0.0
 click>=8.0.0
 pyyaml>=6.0
+numpy>=1.24.0
+scipy>=1.10.0
+
+# 可选功能（按需取消注释安装）
+# MCP Server:      mcp>=1.0
+# LangGraph 编排:  langgraph>=0.2  langchain-core>=0.3
+# 作业存储/队列:   sqlalchemy>=2.0  alembic>=1.13  psycopg[binary]>=3.1  celery[redis]>=5.3  redis>=5.0
+# LLM 意图解析:    openai>=1.0

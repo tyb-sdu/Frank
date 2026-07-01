@@ -2,7 +2,8 @@
 Frank -- Computational Chemistry Terminal Agent
 
 A terminal agent that generates executable computational chemistry code.
-Supports PySCF and Psi4 backends, covering HF, DFT, MP2, CCSD(T), TDDFT, CASSCF, and more.
+Uses the PySCF backend, covering HF, DFT, MP2, CCSD(T), TDDFT, CASSCF, NEVPT2,
+ADC(2), EOM-CCSD, and more.
 """
 
 __version__ = "0.1.0"
